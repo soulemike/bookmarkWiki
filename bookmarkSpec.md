@@ -184,7 +184,7 @@ interface ClassificationResult {
   original_title: string;
   descriptive_title: string;
   summary: string;
-  target_folder: string;
+  target_folder?: string;
   tags: string[];
   content_type: ContentType;
   audience?: "general" | "technical" | "business" | "personal" | "unknown";
@@ -197,10 +197,13 @@ interface ClassificationResult {
 Validation requirements:
 
 ```text
-- All required fields must be present and non-empty unless recommended_action is ignore or hold.
+- url, original_title, descriptive_title, summary, tags, content_type, confidence, recommended_action, and reason must be present and valid.
+- descriptive_title, summary, and reason may be empty only when recommended_action is ignore or hold.
 - confidence must be a finite number from 0 through 1.
 - recommended_action must be one of move, needs_review, ignore, or hold.
 - tags must be an array of strings after trimming and deduplication.
+- target_folder is required for move and needs_review recommendations.
+- target_folder is optional for ignore or hold recommendations and must not be resolved when absent.
 - target_folder must resolve to an approved taxonomy folder in Strict Mode.
 - target_folder may be a suggestion only in Suggest Mode and must require user approval.
 - Invalid provider output shall be retried once with a repair prompt.
@@ -874,19 +877,29 @@ Title updates and folder moves shall be logged as separate reversible operations
 ```ts
 if (classification.recommended_action === "ignore") {
   markIgnored();
+} else if (classification.recommended_action === "hold") {
+  keepInQueue();
+  markLowConfidence();
+} else if (!classification.target_folder) {
+  moveToNeedsReview("missing_target_folder");
 } else if (!folderResolver.canResolve(classification.target_folder, mode)) {
   moveToNeedsReview("unresolved_folder");
-} else if (confidence >= autoMoveThreshold && mode !== "review_only") {
+} else if (confidence < reviewThreshold) {
+  keepInQueue();
+  markLowConfidence();
+} else if (
+  classification.recommended_action === "needs_review" ||
+  confidence < autoMoveThreshold ||
+  mode === "review_only"
+) {
+  moveToNeedsReview();
+  writePendingSuggestion();
+} else {
+  markApproved();
   updateBookmarkTitle();
   ensureFolderExistsIfAllowed();
   moveBookmark();
   writeKnowledgeBaseFileIfEnabled();
-} else if (confidence >= reviewThreshold) {
-  moveToNeedsReview();
-  writePendingSuggestion();
-} else {
-  keepInQueue();
-  markLowConfidence();
 }
 ```
 
