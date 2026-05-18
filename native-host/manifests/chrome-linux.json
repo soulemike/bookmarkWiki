@@ -1,0 +1,1 @@
+{ "name": "com.bookmark_queue_agent.host", "description": "Bookmark Queue Agent Native Host", "path": "/opt/bookmark-queue-agent/host", "type": "stdio", "allowed_origins": [] }
