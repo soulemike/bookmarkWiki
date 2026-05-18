@@ -1,0 +1,39 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - name: Install extension dependencies
+        run: npm ci
+        working-directory: extension
+      - name: Typecheck extension
+        run: npm run typecheck
+        working-directory: extension
+      - name: Test extension
+        run: npm test
+        working-directory: extension
+      - name: Build extension
+        run: npm run build
+        working-directory: extension
+      - name: Verify extension artifact exists
+        run: |
+          test -f extension/dist/manifest.json
+          test -f extension/dist/src/background/service-worker.js
+          test -f extension/dist/sidepanel.html
+          test -f extension/dist/options.html
+          find extension/dist -maxdepth 3 -type f | sort
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bookmark-queue-agent-extension
+          path: extension/dist
+          if-no-files-found: error
+      - name: Write CI summary
+        run: node scripts/ci-summary.mjs
+        working-directory: extension
