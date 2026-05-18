@@ -1,10 +1,24 @@
 import { appendFile } from "node:fs/promises";
 
 const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+const repository = process.env.GITHUB_REPOSITORY;
+const runId = process.env.GITHUB_RUN_ID;
+const runUrl = repository && runId ? `https://github.com/${repository}/actions/runs/${runId}` : undefined;
+const zipArtifactId = process.env.EXTENSION_ZIP_ARTIFACT_ID;
 const zipArtifactUrl = process.env.EXTENSION_ZIP_ARTIFACT_URL;
+const distArtifactId = process.env.EXTENSION_DIST_ARTIFACT_ID;
 const distArtifactUrl = process.env.EXTENSION_DIST_ARTIFACT_URL;
 const markdown = `
 # Bookmark Queue Agent MVP CI Summary
+
+## Download Extension
+
+| Artifact | Purpose | Link |
+| --- | --- | --- |
+| \`bookmark-queue-agent-extension-zip\` | Installable/downloadable extension package | ${artifactLink("Download ZIP", zipArtifactUrl, zipArtifactId)} |
+| \`bookmark-queue-agent-extension-dist\` | Raw unpacked extension directory for inspection | ${artifactLink("Download dist", distArtifactUrl, distArtifactId)} |
+
+${runUrl ? `If the direct links are hidden by GitHub permissions, open the [workflow run artifacts section](${runUrl}) and download \`bookmark-queue-agent-extension-zip\`.` : "Download the `bookmark-queue-agent-extension-zip` artifact from this workflow run."}
 
 ## What this build validates
 
@@ -23,12 +37,18 @@ const markdown = `
 
 ## Artifacts
 
-- Extension ZIP artifact: ${zipArtifactUrl ? `[bookmark-queue-agent-extension-zip](${zipArtifactUrl})` : "bookmark-queue-agent-extension-zip"}
-- Raw dist artifact: ${distArtifactUrl ? `[bookmark-queue-agent-extension-dist](${distArtifactUrl})` : "bookmark-queue-agent-extension-dist"}
+- Extension ZIP artifact: ${artifactLink("bookmark-queue-agent-extension-zip", zipArtifactUrl, zipArtifactId)}
+- Raw dist artifact: ${artifactLink("bookmark-queue-agent-extension-dist", distArtifactUrl, distArtifactId)}
 `;
 
 if (summaryPath) {
   await appendFile(summaryPath, markdown);
 } else {
   console.log(markdown);
+}
+
+function artifactLink(label, url, artifactId) {
+  if (url) return `[${label}](${url})`;
+  if (artifactId) return `${label} (artifact ID: ${artifactId})`;
+  return label;
 }
