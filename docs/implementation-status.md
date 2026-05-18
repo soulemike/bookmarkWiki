@@ -23,6 +23,11 @@ This document is intended to make the MVP deliverables explicit when reviewing C
 - Live-provider contract tests against real cloud services.
 - Automated real-browser E2E execution in CI.
 
+## Local smoke verification
+
+- 2026-05-18: A CDP-assisted Microsoft Edge / Chromium 148 smoke run passed against a clean copy of rebuilt `extension/dist` loaded unpacked. It verified extension service worker discovery, normal bookmark post-create routing into `_Bookmark Queue`, queue persistence, rule-based classification, approval move/title update, rollback, and rollback-safe audit entries.
+- Remaining manual release checks: extension action active-tab capture and context-menu link capture.
+
 ## How to read a successful CI run
 
 A successful CI run means:
