@@ -18,9 +18,13 @@ chrome.runtime.onStartup.addListener(async () => {
   await guards.hydrate();
 });
 
-chrome.action.onClicked.addListener(async (tab) => {
-  await bookmarkManager.currentTabToQueue(tab);
-  await chrome.sidePanel.open({ windowId: tab.windowId });
+chrome.action.onClicked.addListener((tab) => {
+  void chrome.sidePanel.open({ windowId: tab.windowId }).catch((error: unknown) => {
+    console.error("Unable to open Bookmark Queue side panel", error);
+  });
+  void bookmarkManager.currentTabToQueue(tab).catch((error: unknown) => {
+    console.error("Unable to add active tab to Bookmark Queue", error);
+  });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
