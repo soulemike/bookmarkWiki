@@ -49,4 +49,4 @@ The built unpacked extension is emitted to `extension/dist`.
 
 ## CI output
 
-The GitHub Actions workflow runs type-check, test, and build commands from the `extension` working directory, verifies `extension/dist/manifest.json` and the compiled entry files from the repository root, uploads `extension/dist` as the `bookmark-queue-agent-extension` artifact with `if-no-files-found: error`, and writes a step summary that lists the delivered MVP surface area.
+The GitHub Actions workflow checks out full Git history, verifies pull requests include the current base branch, runs type-check, test, and build commands from the `extension` working directory, verifies `extension/dist/manifest.json` and the compiled entry files from the repository root, uploads `extension/dist` as the `bookmark-queue-agent-extension` artifact with `if-no-files-found: error`, and writes a step summary that lists the delivered MVP surface area.

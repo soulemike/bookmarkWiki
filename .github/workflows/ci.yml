@@ -5,6 +5,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify branch includes PR base
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin "${{ github.event.pull_request.base.ref }}"
+          BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
+          if ! git merge-base --is-ancestor "$BASE_REF" HEAD; then
+            echo "This branch is not up to date with $BASE_REF. Rebase or merge the latest base branch before running CI." >&2
+            exit 1
+          fi
       - name: Check for unresolved merge conflict markers
         run: |
           if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- ':!extension/dist'; then

@@ -6,7 +6,7 @@ const markdown = `
 
 ## What this build validates
 
-- Manifest V3 extension sources compile and build into \`extension/dist\`, the workflow verifies key files exist from the repository root, and then uploads that directory as the \`bookmark-queue-agent-extension\` artifact.
+- CI checks out full Git history, verifies PR branches include the current base branch, compiles Manifest V3 extension sources into \`extension/dist\`, verifies key files exist from the repository root, and then uploads that directory as the \`bookmark-queue-agent-extension\` artifact.
 - The service worker supports current-tab capture, context-menu link capture, optional normal-bookmark routing, queue processing, approval, audit, and rollback message handlers.
 - The local no-AI rule provider and OpenAI-compatible provider adapter are included in the build.
 - Unit/integration tests cover URL normalization, classification validation, confidence decisions, folder-path validation, slug sanitization, queue state transitions, folder resolution, and rule-based classification.
