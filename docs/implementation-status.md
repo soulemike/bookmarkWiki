@@ -27,7 +27,8 @@ This document is intended to make the MVP deliverables explicit when reviewing C
 
 A successful CI run means:
 
-1. The TypeScript source type-checks.
-2. The extension can be built into `extension/dist`.
-3. Automated unit/integration tests pass for URL normalization, classification validation, confidence routing, folder paths, slug sanitization, queue transitions, folder resolution, and rule-based classification.
-4. The workflow summary lists the exact MVP capabilities implemented in this repository.
+1. The repository has no unresolved Git merge conflict markers.
+2. The TypeScript source type-checks.
+3. The extension can be built into `extension/dist`.
+4. Automated unit/integration tests pass for URL normalization, classification validation, confidence routing, folder paths, slug sanitization, queue transitions, folder resolution, and rule-based classification.
+5. The workflow summary lists the exact MVP capabilities implemented in this repository.
