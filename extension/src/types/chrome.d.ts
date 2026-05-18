@@ -10,7 +10,8 @@ declare namespace chrome {
     const onCreated: ChromeEvent<(id: string, node: BookmarkTreeNode) => void>;
     const onRemoved: ChromeEvent<(...args: unknown[]) => void>;
     const onChanged: ChromeEvent<(...args: unknown[]) => void>;
-    const onMoved: ChromeEvent<(...args: unknown[]) => void>;
+    interface BookmarkMoveInfo { parentId?: string; index?: number; oldParentId?: string; oldIndex?: number }
+    const onMoved: ChromeEvent<(id: string, moveInfo: BookmarkMoveInfo) => void>;
     const onChildrenReordered: ChromeEvent<(...args: unknown[]) => void>;
   }
   namespace storage {

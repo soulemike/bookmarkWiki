@@ -33,18 +33,42 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
   }
 });
 
-chrome.bookmarks.onCreated.addListener(async (id, node) => {
-  if (!node.url || guards.matches(id, "create")) return;
-  const settings = await storage.getSettings();
-  if (!settings.routeNormalBookmarks) return;
-  await guards.add(id, "move");
-  await bookmarkManager.addUrlToQueue(node.url, node.title, "bookmark_event", id);
+chrome.bookmarks.onCreated.addListener((id, node) => {
+  void handleBookmarkCreated(id, node).catch((error: unknown) => {
+    console.error("Unable to process created bookmark", error);
+  });
+});
+
+chrome.bookmarks.onMoved.addListener((id: string, moveInfo: chrome.bookmarks.BookmarkMoveInfo) => {
+  void handleBookmarkMoved(id, moveInfo).catch((error: unknown) => {
+    console.error("Unable to process moved bookmark", error);
+  });
 });
 
 for (const eventName of ["onCreated", "onRemoved", "onChanged", "onMoved", "onChildrenReordered"] as const) {
   chrome.bookmarks[eventName].addListener(() => {
     // FolderResolver refreshes lazily; this listener keeps the service worker awake for cache invalidation in active sessions.
   });
+}
+
+export async function handleBookmarkCreated(id: string, node: chrome.bookmarks.BookmarkTreeNode): Promise<void> {
+  if (!node.url || guards.matches(id, "create")) return;
+  const alreadyInQueue = await bookmarkManager.isQueueFolder(node.parentId);
+  if (!alreadyInQueue) {
+    const settings = await storage.getSettings();
+    if (!settings.routeNormalBookmarks) return;
+    await guards.add(id, "move");
+  }
+  await bookmarkManager.addUrlToQueue(node.url, node.title, "bookmark_event", id, { skipMove: alreadyInQueue });
+}
+
+export async function handleBookmarkMoved(id: string, moveInfo: { parentId?: string }): Promise<void> {
+  if (guards.matches(id, "move")) return;
+  const movedIntoQueue = await bookmarkManager.isQueueFolder(moveInfo.parentId);
+  if (!movedIntoQueue) return;
+  const [node] = await chrome.bookmarks.get(id);
+  if (!node?.url) return;
+  await bookmarkManager.addUrlToQueue(node.url, node.title, "bookmark_event", id, { skipMove: true });
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
