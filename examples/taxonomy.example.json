@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "defaultRoot": "/Bookmarks Bar",
+  "folders": [
+    { "path": "/Bookmarks Bar/Work", "description": "Work resources" },
+    { "path": "/Bookmarks Bar/Reference", "description": "General reference" }
+  ],
+  "rules": [
+    { "id": "github", "name": "GitHub", "priority": 10, "match": { "domains": ["github.com"] }, "action": { "targetFolder": "/Bookmarks Bar/Work", "tags": ["github"] } }
+  ]
+}
