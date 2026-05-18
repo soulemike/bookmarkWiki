@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "package:extension": "node scripts/package-extension.mjs",
     "smoke:chrome": "node scripts/real-browser-smoke.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify:dist": "node scripts/verify-dist.mjs",

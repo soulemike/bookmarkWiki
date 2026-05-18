@@ -19,9 +19,24 @@ jobs:
       - run: npm run build
       - name: Verify extension artifact contents
         run: npm run verify:dist
-      - uses: actions/upload-artifact@v4
+      - name: Package extension ZIP
+        run: npm run package:extension
+      - name: Upload extension ZIP artifact
+        id: upload-extension-zip
+        uses: actions/upload-artifact@v4
         with:
-          name: bookmark-queue-agent-extension
+          name: bookmark-queue-agent-extension-zip
+          path: ${{ github.workspace }}/extension/package/bookmark-queue-agent-extension.zip
+          if-no-files-found: error
+      - name: Upload extension dist artifact
+        id: upload-extension-dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookmark-queue-agent-extension-dist
           path: ${{ github.workspace }}/extension/dist
           if-no-files-found: error
-      - run: node scripts/ci-summary.mjs
+      - name: Write CI summary
+        run: node scripts/ci-summary.mjs
+        env:
+          EXTENSION_ZIP_ARTIFACT_URL: ${{ steps.upload-extension-zip.outputs.artifact-url }}
+          EXTENSION_DIST_ARTIFACT_URL: ${{ steps.upload-extension-dist.outputs.artifact-url }}
