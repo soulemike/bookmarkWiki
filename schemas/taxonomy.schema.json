@@ -1,0 +1,1 @@
+{ "$schema": "https://json-schema.org/draft/2020-12/schema", "title": "BookmarkTaxonomy", "type": "object", "required": ["version", "defaultRoot", "folders", "rules"], "properties": { "version": { "type": "string" }, "defaultRoot": { "type": "string", "pattern": "^/" }, "folders": { "type": "array" }, "rules": { "type": "array" } } }
