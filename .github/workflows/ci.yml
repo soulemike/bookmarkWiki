@@ -19,35 +19,22 @@ jobs:
       - run: npm run build
       - name: Verify extension artifact contents
         run: npm run verify:dist
-      - name: Package extension ZIP
-        run: npm run package:extension
-      - name: Upload extension ZIP artifact
-        id: upload-extension-zip
+      - name: Upload loadable extension artifact
+        id: upload-extension
         uses: actions/upload-artifact@v4
         with:
-          name: bookmark-queue-agent-extension-zip
-          path: ${{ github.workspace }}/extension/package/bookmark-queue-agent-extension.zip
-          if-no-files-found: error
-      - name: Upload extension dist artifact
-        id: upload-extension-dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: bookmark-queue-agent-extension-dist
-          path: ${{ github.workspace }}/extension/dist
+          name: bookmark-queue-agent-extension-load-unpacked
+          path: ${{ github.workspace }}/extension/dist/**
           if-no-files-found: error
       - name: Write CI summary
         if: always()
         run: node scripts/ci-summary.mjs
         env:
-          EXTENSION_ZIP_ARTIFACT_ID: ${{ steps.upload-extension-zip.outputs.artifact-id }}
-          EXTENSION_ZIP_ARTIFACT_URL: ${{ steps.upload-extension-zip.outputs.artifact-url }}
-          EXTENSION_DIST_ARTIFACT_ID: ${{ steps.upload-extension-dist.outputs.artifact-id }}
-          EXTENSION_DIST_ARTIFACT_URL: ${{ steps.upload-extension-dist.outputs.artifact-url }}
+          EXTENSION_ARTIFACT_ID: ${{ steps.upload-extension.outputs.artifact-id }}
+          EXTENSION_ARTIFACT_URL: ${{ steps.upload-extension.outputs.artifact-url }}
       - name: Surface extension artifact links
-        if: always() && steps.upload-extension-zip.outputs.artifact-url != ''
+        if: always() && steps.upload-extension.outputs.artifact-url != ''
         run: |
-          echo "::notice title=Extension ZIP artifact::bookmark-queue-agent-extension-zip → $EXTENSION_ZIP_ARTIFACT_URL"
-          echo "::notice title=Extension dist artifact::bookmark-queue-agent-extension-dist → $EXTENSION_DIST_ARTIFACT_URL"
+          echo "::notice title=Loadable extension artifact::bookmark-queue-agent-extension-load-unpacked → $EXTENSION_ARTIFACT_URL"
         env:
-          EXTENSION_ZIP_ARTIFACT_URL: ${{ steps.upload-extension-zip.outputs.artifact-url }}
-          EXTENSION_DIST_ARTIFACT_URL: ${{ steps.upload-extension-dist.outputs.artifact-url }}
+          EXTENSION_ARTIFACT_URL: ${{ steps.upload-extension.outputs.artifact-url }}
