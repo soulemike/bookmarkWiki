@@ -8,6 +8,7 @@ import { canTransition } from "../../dist/src/models/bookmark.js";
 test("confidence policy returns hold, review, and auto move", () => {
   assert.equal(decideByConfidence(0.4), "hold");
   assert.equal(decideByConfidence(0.8), "needs_review");
+  assert.equal(decideByConfidence(0.82, { reviewThreshold: 0.7, autoMoveThreshold: 0.82, mode: "auto_when_confident" }), "auto_move");
   assert.equal(decideByConfidence(0.95, { reviewThreshold: 0.7, autoMoveThreshold: 0.9, mode: "auto_when_confident" }), "auto_move");
 });
 

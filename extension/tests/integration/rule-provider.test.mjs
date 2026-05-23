@@ -7,5 +7,6 @@ test("RuleBasedProvider classifies GitHub with deterministic local rules", async
   const result = await provider.classifyBookmark({ url: "https://github.com/openai/openai-node", title: "openai-node", taxonomyFolders: ["/Bookmarks Bar/Work"] });
   assert.equal(result.ok, true);
   assert.equal(result.value.target_folder, "/Bookmarks Bar/Work");
+  assert.equal(result.value.recommended_action, "move");
   assert.ok(result.value.tags.includes("github"));
 });

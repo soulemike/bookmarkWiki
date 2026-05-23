@@ -16,6 +16,9 @@ async function load(): Promise<void> {
     <form id="settings-form">
       <label><input name="routeNormalBookmarks" type="checkbox" ${settings.routeNormalBookmarks ? "checked" : ""}> Route normal bookmarks to queue</label>
       <label><input name="enableAutoMove" type="checkbox" ${settings.enableAutoMove ? "checked" : ""}> Enable auto-move for high confidence</label>
+      <label>Review threshold <input name="reviewThreshold" type="number" min="0" max="1" step="0.01" value="${settings.reviewThreshold}"></label>
+      <label>Auto-move threshold <input name="autoMoveThreshold" type="number" min="0" max="1" step="0.01" value="${settings.autoMoveThreshold}"></label>
+      <p class="hint">A bookmark only auto-moves when auto-move is enabled and confidence is at or above the auto-move threshold. The default is 0.90.</p>
       <label><input name="allowPageTextExtraction" type="checkbox" ${settings.allowPageTextExtraction ? "checked" : ""}> Allow page text extraction</label>
       <label>Provider
         <select name="provider">
@@ -40,6 +43,8 @@ async function load(): Promise<void> {
       ...settings,
       routeNormalBookmarks: data.get("routeNormalBookmarks") === "on",
       enableAutoMove: data.get("enableAutoMove") === "on",
+      reviewThreshold: clampUnitInterval(Number(data.get("reviewThreshold")), settings.reviewThreshold),
+      autoMoveThreshold: clampUnitInterval(Number(data.get("autoMoveThreshold")), settings.autoMoveThreshold),
       allowPageTextExtraction: data.get("allowPageTextExtraction") === "on",
       provider: data.get("provider") as UserSettings["provider"],
       excludedDomains: String(data.get("excludedDomains") ?? "").split(",").map((domain) => domain.trim()).filter(Boolean)
@@ -61,3 +66,8 @@ async function load(): Promise<void> {
 }
 
 void load();
+
+function clampUnitInterval(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(1, Math.max(0, value));
+}

@@ -40,7 +40,7 @@ export class RuleBasedProvider implements AIProvider {
         content_type: domain === "github.com" ? "repository" : "reference",
         audience: "unknown",
         confidence: rule ? 0.82 : 0.62,
-        recommended_action: rule ? "needs_review" : "hold",
+        recommended_action: rule ? "move" : "hold",
         reason: rule ? `Matched rule: ${rule.name}.` : "No rule matched with enough confidence."
       }
     };

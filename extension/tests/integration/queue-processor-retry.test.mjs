@@ -3,8 +3,12 @@ import assert from "node:assert/strict";
 import { QueueProcessor } from "../../dist/src/background/queue-processor.js";
 
 let localStore;
+let movedTo;
+let updatedTitle;
 
 function resetChromeMock() {
+  movedTo = undefined;
+  updatedTitle = undefined;
   localStore = {
     queueItems: [{
       id: "queue-1",
@@ -27,6 +31,16 @@ function resetChromeMock() {
       max_tokens: 1200,
       timeout_seconds: 30,
       retry_count: 1
+    },
+    settings: {
+      routeNormalBookmarks: false,
+      provider: "rule-based",
+      strictMode: true,
+      enableAutoMove: false,
+      reviewThreshold: 0.7,
+      autoMoveThreshold: 0.9,
+      excludedDomains: [],
+      allowPageTextExtraction: false
     }
   };
   globalThis.chrome = {
@@ -36,7 +50,11 @@ function resetChromeMock() {
         set: async (items) => { Object.assign(localStore, items); }
       }
     },
-    bookmarks: { get: async () => [], update: async () => undefined, move: async () => undefined }
+    bookmarks: {
+      get: async () => [{ id: "bookmark-1", parentId: "queue-folder", index: 0, title: "Example", url: "https://example.com" }],
+      update: async (_id, changes) => { updatedTitle = changes.title; },
+      move: async (_id, destination) => { movedTo = destination.parentId; }
+    }
   };
 }
 
@@ -68,4 +86,38 @@ test("QueueProcessor surfaces retryable failures immediately for interactive cla
 
   assert.equal(item.status, "needs_review");
   assert.equal(item.error, "Failed to fetch");
+});
+
+test("QueueProcessor auto-moves when confidence meets configured threshold", async () => {
+  resetChromeMock();
+  localStore.settings.enableAutoMove = true;
+  localStore.settings.autoMoveThreshold = 0.82;
+  const classifier = {
+    classify: async () => ({
+      ok: true,
+      value: {
+        url: "https://example.com",
+        original_title: "Example",
+        descriptive_title: "Example: Classified",
+        summary: "Summary",
+        target_folder: "/Bookmarks Bar/Work",
+        tags: ["example"],
+        content_type: "reference",
+        confidence: 0.82,
+        recommended_action: "move",
+        reason: "Matched rule."
+      }
+    })
+  };
+  const folderResolver = {
+    resolve: async () => ({ ok: true, folder: { path: "/Bookmarks Bar/Work", chromeBookmarkId: "work-folder", root: "bookmarks_bar" } })
+  };
+  const guards = { add: async () => ({ operationId: "operation", chromeBookmarkId: "bookmark-1", action: "move", createdAt: new Date(0).toISOString(), expiresAt: new Date(1).toISOString() }) };
+  const processor = new QueueProcessor(classifier, folderResolver, guards);
+
+  const item = await processor.processNext();
+
+  assert.equal(item.status, "moved");
+  assert.equal(updatedTitle, "Example: Classified");
+  assert.equal(movedTo, "work-folder");
 });
