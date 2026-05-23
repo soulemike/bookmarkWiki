@@ -27,7 +27,9 @@ export class QueueProcessor {
 
     const result = await this.classifier.classify(item);
     if (!result.ok) {
-      item.status = result.retryable ? "queued" : "needs_review";
+      const providerConfig = await storage.getProviderConfig();
+      const retryLimit = providerConfig?.retry_count ?? 1;
+      item.status = result.retryable && item.attemptCount <= retryLimit ? "queued" : "needs_review";
       item.lastErrorCode = result.code;
       item.error = result.message;
       item.lockedUntil = undefined;

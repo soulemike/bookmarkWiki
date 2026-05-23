@@ -32,7 +32,8 @@ review, approve/move, audit, and rollback.
 
 - This is an MVP 1 implementation, not the MVP 3 filesystem knowledge-base exporter or MVP 4 native host automation.
 - The default provider is local deterministic rules; remote AI only runs after the user configures an OpenAI-compatible provider.
-- API keys are stored through `chrome.storage.local` only and are not written to sync storage, docs, fixtures, exports, or tests.
+- OpenAI-compatible API access uses a user-supplied API project key or compatible bearer token; ChatGPT subscriptions/OIDC sign-in are not API credentials for this extension.
+- API keys and bearer tokens are stored through `chrome.storage.local` only and are not written to sync storage, docs, fixtures, exports, or tests.
 - Real-browser extension E2E execution is documented as a release gate; automated coverage currently uses unit/integration tests with mocked Chrome APIs.
 
 ## Development

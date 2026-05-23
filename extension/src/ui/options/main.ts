@@ -10,7 +10,7 @@ async function send<T>(message: unknown): Promise<T> {
 }
 
 async function load(): Promise<void> {
-  const { settings, providerConfig } = await send<SettingsResponse>({ type: "settings:get" });
+  const { settings, providerConfig: savedProviderConfig } = await send<SettingsResponse>({ type: "settings:get" });
   app.innerHTML = `
     <h1>Bookmark Queue Agent Options</h1>
     <form id="settings-form">
@@ -23,9 +23,13 @@ async function load(): Promise<void> {
           <option value="openai-compatible" ${settings.provider === "openai-compatible" ? "selected" : ""}>OpenAI-compatible</option>
         </select>
       </label>
-      <label>Base URL <input name="base_url" value="${providerConfig?.base_url ?? "https://api.openai.com/v1"}"></label>
-      <label>Model <input name="model" value="${providerConfig?.model ?? "gpt-5.5"}"></label>
-      <label>API key <input name="api_key" type="password" placeholder="Stored in chrome.storage.local only"></label>
+      <section class="provider-note" aria-label="Provider authentication note">
+        <strong>OpenAI API authentication</strong>
+        <p>OpenAI API calls use API project keys or compatible bearer tokens. ChatGPT subscriptions and OpenAI account sign-in/OIDC sessions do not grant third-party API access for this extension.</p>
+      </section>
+      <label>Base URL <input name="base_url" value="${savedProviderConfig?.base_url ?? "https://api.openai.com/v1"}"></label>
+      <label>Model <input name="model" value="${savedProviderConfig?.model ?? "gpt-5.5"}"></label>
+      <label>API project key or compatible bearer token <input name="api_key" type="password" placeholder="Stored in chrome.storage.local only; leave blank to keep saved key"></label>
       <label>Excluded domains <input name="excludedDomains" value="${settings.excludedDomains.join(", ")}"></label>
       <button>Save</button>
     </form>`;
@@ -40,11 +44,12 @@ async function load(): Promise<void> {
       provider: data.get("provider") as UserSettings["provider"],
       excludedDomains: String(data.get("excludedDomains") ?? "").split(",").map((domain) => domain.trim()).filter(Boolean)
     };
+    const apiKey = String(data.get("api_key") || "");
     const providerConfig: ProviderConfig = {
       provider: "openai-compatible",
       base_url: String(data.get("base_url")),
       model: String(data.get("model")),
-      api_key: String(data.get("api_key") || "") || undefined,
+      api_key: apiKey || savedProviderConfig?.api_key,
       temperature: 0.1,
       max_tokens: 1200,
       timeout_seconds: 30,
