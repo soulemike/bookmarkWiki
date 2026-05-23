@@ -72,13 +72,13 @@ export async function handleBookmarkMoved(id: string, moveInfo: { parentId?: str
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === "process-queue") await processor.processNext();
+  if (alarm.name === "process-queue") await processor.processNext({ retryTransientFailures: true });
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   void (async () => {
     if (message?.type === "queue:list") sendResponse({ queue: await storage.getQueue(), audit: await storage.getAuditLog() });
-    else if (message?.type === "queue:process-next") sendResponse({ item: await processor.processNext() });
+    else if (message?.type === "queue:process-next") sendResponse({ item: await processor.processNext({ retryTransientFailures: false }) });
     else if (message?.type === "queue:approve") sendResponse({ item: await processor.approve(message.id, message.edits) });
     else if (message?.type === "queue:mark") sendResponse({ item: await processor.mark(message.id, message.status) });
     else if (message?.type === "queue:rollback-last") {

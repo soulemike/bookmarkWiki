@@ -8,6 +8,10 @@ import { ClassificationOrchestrator } from "./classifier.js";
 
 const LOCK_MS = 2 * 60 * 1000;
 
+export interface ProcessNextOptions {
+  retryTransientFailures?: boolean;
+}
+
 export class QueueProcessor {
   constructor(
     private classifier = new ClassificationOrchestrator(),
@@ -15,7 +19,7 @@ export class QueueProcessor {
     private guards = new OperationGuardManager()
   ) {}
 
-  async processNext(): Promise<BookmarkQueueItem | undefined> {
+  async processNext(options: ProcessNextOptions = {}): Promise<BookmarkQueueItem | undefined> {
     const queue = await storage.getQueue();
     const now = Date.now();
     const item = queue.find((candidate) => candidate.status === "queued" && (!candidate.lockedUntil || new Date(candidate.lockedUntil).getTime() < now));
@@ -29,7 +33,8 @@ export class QueueProcessor {
     if (!result.ok) {
       const providerConfig = await storage.getProviderConfig();
       const retryLimit = providerConfig?.retry_count ?? 1;
-      item.status = result.retryable && item.attemptCount <= retryLimit ? "queued" : "needs_review";
+      const retryTransientFailures = options.retryTransientFailures ?? true;
+      item.status = retryTransientFailures && result.retryable && item.attemptCount <= retryLimit ? "queued" : "needs_review";
       item.lastErrorCode = result.code;
       item.error = result.message;
       item.lockedUntil = undefined;

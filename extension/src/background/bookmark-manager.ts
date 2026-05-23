@@ -1,4 +1,6 @@
 import type { BookmarkQueueItem, BookmarkQueueSource } from "../models/bookmark.js";
+import { DEFAULT_TAXONOMY } from "../models/taxonomy.js";
+import { parseFolderPath } from "../utils/folder-path.js";
 import { normalizeUrl } from "../utils/normalize-url.js";
 import { storage } from "./storage.js";
 
@@ -18,7 +20,20 @@ export class BookmarkManager {
       if (existing) ids[title] = existing.id;
       else ids[title] = (await chrome.bookmarks.create({ parentId: "1", title })).id;
     }
+    for (const folder of DEFAULT_TAXONOMY.folders) await this.ensureFolderPath(folder.path);
     return ids;
+  }
+
+  async ensureFolderPath(path: string): Promise<string> {
+    const [root, ...segments] = parseFolderPath(path);
+    if (root !== "Bookmarks Bar") throw new Error(`Unsupported default taxonomy root: ${root}`);
+    let parentId = "1";
+    for (const segment of segments) {
+      const children = await chrome.bookmarks.getChildren(parentId);
+      const existing = children.find((node) => !node.url && node.title === segment);
+      parentId = existing?.id ?? (await chrome.bookmarks.create({ parentId, title: segment })).id;
+    }
+    return parentId;
   }
 
   async isQueueFolder(parentId: string | undefined): Promise<boolean> {

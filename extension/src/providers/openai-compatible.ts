@@ -24,7 +24,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       const response = await fetch(`${this.config.base_url.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         signal: controller.signal,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.config.api_key}` },
+          headers: { "Content-Type": "application/json", Authorization: authorizationHeader(this.config.api_key) },
         body: JSON.stringify({
           model: this.config.model,
           temperature: this.config.temperature,
@@ -54,6 +54,11 @@ export class OpenAICompatibleProvider implements AIProvider {
   async summarizeBookmark(input: SummaryInput): Promise<ProviderResult<SummaryResult>> {
     return { ok: true, value: { summary: `Summary requested for ${input.title || input.url}.` } };
   }
+}
+
+export function authorizationHeader(token: string | undefined): string {
+  const normalized = token?.trim().replace(/^Bearer\s+/i, "") ?? "";
+  return `Bearer ${normalized}`;
 }
 
 export async function readProviderError(response: Response): Promise<string | undefined> {

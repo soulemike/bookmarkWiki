@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeHttpFailure, readProviderError } from "../../dist/src/providers/openai-compatible.js";
+import { authorizationHeader, normalizeHttpFailure, readProviderError } from "../../dist/src/providers/openai-compatible.js";
 
 test("OpenAI-compatible 429 insufficient_quota is surfaced as non-retryable quota detail", async () => {
   const response = new Response(JSON.stringify({
@@ -48,4 +48,9 @@ test("OpenAI-compatible auth failures include provider details", () => {
   assert.equal(failure.code, "auth_failed");
   assert.equal(failure.retryable, false);
   assert.match(failure.message, /incorrect api key/i);
+});
+
+test("OpenAI-compatible authorization header accepts pasted Bearer tokens", () => {
+  assert.equal(authorizationHeader("Bearer eyJhbGciOi..."), "Bearer eyJhbGciOi...");
+  assert.equal(authorizationHeader("  sk-proj-example  "), "Bearer sk-proj-example");
 });

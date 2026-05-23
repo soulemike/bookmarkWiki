@@ -56,3 +56,16 @@ test("QueueProcessor stops retryable provider failures after configured retry_co
   assert.equal(secondAttempt.attemptCount, 2);
   assert.equal(secondAttempt.lastErrorCode, "rate_limited");
 });
+
+test("QueueProcessor surfaces retryable failures immediately for interactive classification", async () => {
+  resetChromeMock();
+  const classifier = {
+    classify: async () => ({ ok: false, code: "network_error", message: "Failed to fetch", retryable: true })
+  };
+  const processor = new QueueProcessor(classifier);
+
+  const item = await processor.processNext({ retryTransientFailures: false });
+
+  assert.equal(item.status, "needs_review");
+  assert.equal(item.error, "Failed to fetch");
+});
