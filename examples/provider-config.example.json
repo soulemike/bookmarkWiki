@@ -12,7 +12,7 @@
   },
   "openai_chatgpt_oauth": {
     "provider": "openai-chatgpt-oauth",
-    "base_url": "https://api.openai.com/v1",
+    "base_url": "https://chatgpt.com/backend-api/codex",
     "model": "gpt-5.5",
     "token_storage": "chrome.storage.local",
     "temperature": 0.1,

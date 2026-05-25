@@ -2,14 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   OpenAIChatGptOAuthProvider,
+  OPENAI_CHATGPT_CODEX_BASE_URL,
   OPENAI_CHATGPT_DEVICE_APPROVAL_URL,
   OPENAI_CHATGPT_DEVICE_CALLBACK_URL,
   OPENAI_CHATGPT_DEVICE_TOKEN_URL,
   OPENAI_CHATGPT_DEVICE_USER_CODE_URL,
   OPENAI_CHATGPT_OAUTH_CLIENT_ID,
   OPENAI_CHATGPT_OAUTH_TOKEN_URL,
+  codexClassificationRequest,
   deviceAuthorizationUrl,
   disconnectChatGptOAuth,
+  parseCodexSse,
   pollChatGptOAuthDeviceAuthorization,
   startChatGptOAuthDeviceAuthorization,
   validateOAuthConnectConfig
@@ -17,7 +20,7 @@ import {
 
 const config = {
   provider: "openai-chatgpt-oauth",
-  base_url: "https://api.openai.com/v1",
+  base_url: OPENAI_CHATGPT_CODEX_BASE_URL,
   model: "gpt-5.5",
   access_token: "access-token",
   refresh_token: "refresh-token",
@@ -75,25 +78,7 @@ test("ChatGPT OAuth refresh preserves existing refresh token when endpoint omits
     if (String(url).endsWith("/oauth/token")) {
       return new Response(JSON.stringify({ access_token: "new-access-token", expires_in: 3600 }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
-    return new Response(JSON.stringify({
-      choices: [{
-        message: {
-          content: JSON.stringify({
-            url: "https://example.com",
-            original_title: "Example",
-            descriptive_title: "Example classified",
-            summary: "Summary",
-            target_folder: "/Bookmarks Bar/Work",
-            tags: ["example"],
-            content_type: "reference",
-            audience: "general",
-            confidence: 0.8,
-            recommended_action: "needs_review",
-            reason: "Matched test taxonomy."
-          })
-        }
-      }]
-    }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(codexSse(JSON.stringify(classificationJson())), { status: 200, headers: { "Content-Type": "text/event-stream" } });
   };
 
   try {
@@ -104,11 +89,55 @@ test("ChatGPT OAuth refresh preserves existing refresh token when endpoint omits
     assert.equal(updatedConfig.refresh_token, "refresh-token");
     assert.equal(calls.length, 2);
     assert.equal(calls[0].url, OPENAI_CHATGPT_OAUTH_TOKEN_URL);
+    assert.equal(calls[1].url, `${OPENAI_CHATGPT_CODEX_BASE_URL}/responses`);
     assert.equal(calls[1].options.headers.Authorization, "Bearer new-access-token");
+    assert.equal(calls[1].options.headers.Accept, "text/event-stream");
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("ChatGPT OAuth Codex SSE parser extracts assistant output_text JSON", () => {
+  const json = JSON.stringify(classificationJson());
+  const parsed = parseCodexSse(codexSse(json));
+
+  assert.equal(parsed.content, json);
+  assert.equal(parsed.inputTokens, 12);
+  assert.equal(parsed.outputTokens, 34);
+});
+
+test("ChatGPT OAuth Codex request uses responses input message shape", () => {
+  const request = codexClassificationRequest(config, { url: "https://example.com", title: "Example", taxonomyFolders: ["/Bookmarks Bar/Work"] });
+
+  assert.equal(request.model, "gpt-5.5");
+  assert.equal(request.stream, true);
+  assert.equal(request.input[0].role, "user");
+  assert.equal(request.input[0].content[0].type, "input_text");
+});
+
+function classificationJson() {
+  return {
+    url: "https://example.com",
+    original_title: "Example",
+    descriptive_title: "Example classified",
+    summary: "Summary",
+    target_folder: "/Bookmarks Bar/Work",
+    tags: ["example"],
+    content_type: "reference",
+    audience: "general",
+    confidence: 0.8,
+    recommended_action: "needs_review",
+    reason: "Matched test taxonomy."
+  };
+}
+
+function codexSse(outputText) {
+  return [
+    `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: outputText })}`,
+    `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response: { usage: { input_tokens: 12, output_tokens: 34 } } })}`,
+    "data: [DONE]"
+  ].join("\n\n");
+}
 
 test("ChatGPT OAuth device flow starts, polls, and exchanges approved code", async () => {
   const originalFetch = globalThis.fetch;

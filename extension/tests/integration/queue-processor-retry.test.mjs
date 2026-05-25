@@ -121,3 +121,51 @@ test("QueueProcessor auto-moves when confidence meets configured threshold", asy
   assert.equal(updatedTitle, "Example: Classified");
   assert.equal(movedTo, "work-folder");
 });
+
+test("QueueProcessor clears stale provider errors after successful classification", async () => {
+  resetChromeMock();
+  localStore.queueItems[0].error = "Provider rate limit or quota error";
+  localStore.queueItems[0].lastErrorCode = "rate_limited";
+  localStore.queueItems[0].attemptCount = 1;
+  const classifier = {
+    classify: async () => ({
+      ok: true,
+      value: {
+        url: "https://example.com",
+        original_title: "Example",
+        descriptive_title: "Example: Classified",
+        summary: "Summary",
+        target_folder: "/Bookmarks Bar/Work",
+        tags: ["example"],
+        content_type: "reference",
+        confidence: 0.72,
+        recommended_action: "needs_review",
+        reason: "Matched rule."
+      }
+    })
+  };
+  const processor = new QueueProcessor(classifier);
+
+  const item = await processor.processNext();
+
+  assert.equal(item.status, "needs_review");
+  assert.equal(item.reason, "Matched rule.");
+  assert.equal(item.error, undefined);
+  assert.equal(item.lastErrorCode, undefined);
+});
+
+test("QueueProcessor clears stale display text when requeueing for reclassification", async () => {
+  resetChromeMock();
+  localStore.queueItems[0].status = "needs_review";
+  localStore.queueItems[0].reason = "Old classification reason";
+  localStore.queueItems[0].error = "Provider rate limit or quota error";
+  localStore.queueItems[0].lastErrorCode = "rate_limited";
+  const processor = new QueueProcessor({ classify: async () => ({ ok: false, code: "network_error", message: "unused", retryable: true }) });
+
+  const item = await processor.mark("queue-1", "queued");
+
+  assert.equal(item.status, "queued");
+  assert.equal(item.error, undefined);
+  assert.equal(item.reason, undefined);
+  assert.equal(item.lastErrorCode, undefined);
+});

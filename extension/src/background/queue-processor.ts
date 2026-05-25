@@ -50,6 +50,8 @@ export class QueueProcessor {
     item.tags = result.value.tags;
     item.summary = result.value.summary;
     item.reason = result.value.reason;
+    item.error = undefined;
+    item.lastErrorCode = undefined;
     item.status = "classified";
     item.lockedUntil = undefined;
     await storage.upsertQueueItem(item);
@@ -68,6 +70,10 @@ export class QueueProcessor {
     if (!item) return undefined;
     item.status = status;
     item.error = error;
+    if (status === "queued") {
+      item.reason = undefined;
+      item.lastErrorCode = undefined;
+    }
     item.updatedAt = new Date().toISOString();
     await storage.upsertQueueItem(item);
     return item;

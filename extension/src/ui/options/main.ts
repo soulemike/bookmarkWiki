@@ -1,6 +1,6 @@
 import type { ProviderConfig, UserSettings } from "../../background/storage.js";
 import type { BookmarkTaxonomy } from "../../models/taxonomy.js";
-import { OPENAI_CHATGPT_DEVICE_CALLBACK_URL, OPENAI_CHATGPT_OAUTH_CLIENT_ID, type DeviceAuthorizationSession, validateOAuthConnectConfig } from "../../providers/openai-chatgpt-oauth.js";
+import { OPENAI_CHATGPT_CODEX_BASE_URL, OPENAI_CHATGPT_DEVICE_CALLBACK_URL, OPENAI_CHATGPT_OAUTH_CLIENT_ID, type DeviceAuthorizationSession, validateOAuthConnectConfig } from "../../providers/openai-chatgpt-oauth.js";
 import { providerOriginPattern, validateProviderBaseUrl } from "../../providers/openai-compatible.js";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -54,7 +54,7 @@ async function load(): Promise<void> {
         <p>Use an OpenAI Platform API project key, a token for a local OpenAI-compatible bridge, or OpenAI ChatGPT OAuth via device authorization. ChatGPT/Codex browser cookies, copied session tokens, and account web sessions are not used as credentials.</p>
         <p>Local bridges must expose an OpenAI-compatible <code>/chat/completions</code> endpoint. Plain HTTP is allowed only for localhost or 127.0.0.1.</p>
       </section>
-      <label>Base URL <input name="base_url" value="${escapeAttribute(savedProviderConfig?.base_url ?? "https://api.openai.com/v1")}"></label>
+      <label>Base URL <input name="base_url" value="${escapeAttribute(defaultBaseUrl(settings.provider, savedProviderConfig))}"></label>
       <label>Model <input name="model" value="${escapeAttribute(savedProviderConfig?.model ?? "gpt-5.5")}"></label>
       <label>API project key or compatible bearer token <input name="api_key" type="password" placeholder="Stored in chrome.storage.local only; leave blank to keep saved key"></label>
       <section class="provider-note" aria-label="ChatGPT OAuth settings">
@@ -159,15 +159,16 @@ async function requestProviderPermissions(config: ProviderConfig): Promise<boole
 }
 
 function buildProviderConfig(data: FormData, savedProviderConfig: ProviderConfig | undefined, openAICompatibleConfig: ProviderConfig | undefined): ProviderConfig {
+  const selectedProvider = data.get("provider");
   const baseConfig = {
-    base_url: String(data.get("base_url") ?? "").trim(),
+    base_url: selectedProvider === "openai-chatgpt-oauth" ? OPENAI_CHATGPT_CODEX_BASE_URL : String(data.get("base_url") ?? "").trim(),
     model: String(data.get("model") ?? "").trim(),
     temperature: 0.1,
     max_tokens: 1200,
     timeout_seconds: 30,
     retry_count: 1
   };
-  if (data.get("provider") === "openai-chatgpt-oauth") {
+  if (selectedProvider === "openai-chatgpt-oauth") {
     const canReuseTokens = savedProviderConfig?.provider === "openai-chatgpt-oauth"
       && savedProviderConfig.base_url === baseConfig.base_url
       && !hasLegacyOAuthMetadata(savedProviderConfig);
@@ -185,6 +186,11 @@ function buildProviderConfig(data: FormData, savedProviderConfig: ProviderConfig
     ...baseConfig,
     api_key: apiKey || (openAICompatibleConfig?.provider === "openai-compatible" ? openAICompatibleConfig.api_key : undefined)
   };
+}
+
+function defaultBaseUrl(provider: UserSettings["provider"], savedProviderConfig: ProviderConfig | undefined): string {
+  if (provider === "openai-chatgpt-oauth") return OPENAI_CHATGPT_CODEX_BASE_URL;
+  return savedProviderConfig?.base_url ?? "https://api.openai.com/v1";
 }
 
 function validateProviderConfig(config: ProviderConfig): string | undefined {

@@ -4,7 +4,7 @@
   "description": "Inbound bookmark queue with rule-based or BYO AI classification and rollback-safe review.",
   "version": "0.1.0",
   "permissions": ["bookmarks", "storage", "contextMenus", "activeTab", "scripting", "sidePanel", "alarms", "nativeMessaging"],
-  "host_permissions": ["https://api.openai.com/*", "https://auth.openai.com/*"],
+  "host_permissions": ["https://api.openai.com/*", "https://auth.openai.com/*", "https://chatgpt.com/*"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
   "background": { "service_worker": "src/background/service-worker.js", "type": "module" },
   "action": { "default_title": "Add to Bookmark Queue" },
