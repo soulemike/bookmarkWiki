@@ -6,6 +6,7 @@ const QUEUE_FOLDER_ID = "queue-folder";
 
 let localStore;
 let nodes;
+let createdAlarms;
 
 class ChromeEventMock {
   listeners = [];
@@ -17,15 +18,20 @@ class ChromeEventMock {
 
 function resetChromeMock() {
   localStore = {};
+  createdAlarms = [];
   nodes = new Map([
     [BOOKMARKS_BAR_ID, { id: BOOKMARKS_BAR_ID, title: "Bookmarks Bar", children: [] }],
     [QUEUE_FOLDER_ID, { id: QUEUE_FOLDER_ID, parentId: BOOKMARKS_BAR_ID, title: "_Bookmark Queue", children: [] }],
     ["review-folder", { id: "review-folder", parentId: BOOKMARKS_BAR_ID, title: "_Needs Review", children: [] }],
     ["processed-folder", { id: "processed-folder", parentId: BOOKMARKS_BAR_ID, title: "_Processed", children: [] }],
-    ["archive-folder", { id: "archive-folder", parentId: BOOKMARKS_BAR_ID, title: "_Archive", children: [] }]
+    ["archive-folder", { id: "archive-folder", parentId: BOOKMARKS_BAR_ID, title: "_Archive", children: [] }],
+    ["work-folder", { id: "work-folder", parentId: BOOKMARKS_BAR_ID, title: "Work", children: [] }],
+    ["personal-folder", { id: "personal-folder", parentId: BOOKMARKS_BAR_ID, title: "Personal", children: [] }],
+    ["reference-folder", { id: "reference-folder", parentId: BOOKMARKS_BAR_ID, title: "Reference", children: [] }]
   ]);
   globalThis.chrome = {
     bookmarks: {
+      getTree: async () => [{ id: "0", title: "", children: [treeNode(BOOKMARKS_BAR_ID)] }],
       getChildren: async (id) => [...nodes.values()].filter((node) => node.parentId === id),
       create: async (bookmark) => {
         const id = `created-${nodes.size}`;
@@ -59,13 +65,18 @@ function resetChromeMock() {
     },
     action: { onClicked: new ChromeEventMock() },
     contextMenus: { create: () => undefined, onClicked: new ChromeEventMock() },
-    alarms: { create: () => undefined, onAlarm: new ChromeEventMock() },
+    alarms: { create: (name, info) => { createdAlarms.push({ name, info }); }, onAlarm: new ChromeEventMock() },
     sidePanel: { open: async () => undefined }
   };
 }
 
+function treeNode(id) {
+  const node = nodes.get(id);
+  return { ...node, children: [...nodes.values()].filter((child) => child.parentId === id).map((child) => treeNode(child.id)) };
+}
+
 resetChromeMock();
-const { handleBookmarkCreated, handleBookmarkMoved } = await import("../../dist/src/background/service-worker.js");
+const { handleBookmarkCreated, handleBookmarkMoved, kickQueueProcessing } = await import("../../dist/src/background/service-worker.js");
 
 test("created bookmarks already inside _Bookmark Queue are queued when normal routing is off", async () => {
   resetChromeMock();
@@ -77,7 +88,8 @@ test("created bookmarks already inside _Bookmark Queue are queued when normal ro
   assert.equal(nodes.get(bookmark.id).parentId, QUEUE_FOLDER_ID);
   assert.equal(localStore.queueItems.length, 1);
   assert.equal(localStore.queueItems[0].chromeBookmarkId, bookmark.id);
-  assert.equal(localStore.queueItems[0].status, "queued");
+  assert.notEqual(localStore.queueItems[0].status, "queued");
+  assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
   assert.equal(localStore.auditLog[0].action, "create_queue_item");
 });
 
@@ -91,6 +103,8 @@ test("bookmarks moved into _Bookmark Queue are queued when normal routing is off
   assert.equal(localStore.queueItems.length, 1);
   assert.equal(localStore.queueItems[0].chromeBookmarkId, bookmark.id);
   assert.equal(localStore.queueItems[0].source, "bookmark_event");
+  assert.equal(localStore.queueItems[0].status, "needs_review");
+  assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
 });
 
 test("bookmarks outside _Bookmark Queue still require normal routing opt-in", async () => {
@@ -101,4 +115,25 @@ test("bookmarks outside _Bookmark Queue still require normal routing opt-in", as
   await handleBookmarkCreated(bookmark.id, bookmark);
 
   assert.equal(localStore.queueItems, undefined);
+});
+
+test("queue processing kick drains multiple queued items without manual sidepanel action", async () => {
+  resetChromeMock();
+  localStore.queueItems = ["one", "two"].map((suffix) => ({
+    id: `queue-${suffix}`,
+    chromeBookmarkId: `bookmark-${suffix}`,
+    url: `https://example.com/${suffix}`,
+    normalizedUrl: `https://example.com/${suffix}`,
+    originalTitle: `Example ${suffix}`,
+    source: "bookmark_event",
+    status: "queued",
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    attemptCount: 0
+  }));
+
+  await kickQueueProcessing();
+
+  assert.deepEqual(localStore.queueItems.map((item) => item.status), ["needs_review", "needs_review"]);
+  assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
 });

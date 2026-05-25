@@ -9,23 +9,28 @@ const bookmarkManager = new BookmarkManager();
 const guards = new OperationGuardManager();
 const processor = new QueueProcessor(undefined, undefined, guards);
 const syncDispatcher = new SyncDispatcher();
+const MAX_QUEUE_DRAIN_PER_KICK = 5;
 
 chrome.runtime.onInstalled.addListener(async () => {
   await guards.hydrate();
   await bookmarkManager.ensureDefaultFolders();
   chrome.contextMenus.create({ id: "add-link-to-bookmark-queue", title: "Add link to Bookmark Queue", contexts: ["link"] });
-  chrome.alarms.create("process-queue", { periodInMinutes: 1 });
+  ensureQueueProcessingAlarm();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await guards.hydrate();
+  ensureQueueProcessingAlarm();
+  void kickQueueProcessing().catch((error: unknown) => {
+    console.error("Unable to process Bookmark Queue on startup", error);
+  });
 });
 
 chrome.action.onClicked.addListener((tab) => {
   void chrome.sidePanel.open({ windowId: tab.windowId }).catch((error: unknown) => {
     console.error("Unable to open Bookmark Queue side panel", error);
   });
-  void bookmarkManager.currentTabToQueue(tab).catch((error: unknown) => {
+  void bookmarkManager.currentTabToQueue(tab).then(() => kickQueueProcessing()).catch((error: unknown) => {
     console.error("Unable to add active tab to Bookmark Queue", error);
   });
 });
@@ -33,6 +38,7 @@ chrome.action.onClicked.addListener((tab) => {
 chrome.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === "add-link-to-bookmark-queue" && info.linkUrl) {
     await bookmarkManager.addUrlToQueue(info.linkUrl, info.selectionText || info.linkUrl, "context_menu");
+    await kickQueueProcessing();
   }
 });
 
@@ -63,6 +69,7 @@ export async function handleBookmarkCreated(id: string, node: chrome.bookmarks.B
     await guards.add(id, "move");
   }
   await bookmarkManager.addUrlToQueue(node.url, node.title, "bookmark_event", id, { skipMove: alreadyInQueue });
+  await kickQueueProcessing();
 }
 
 export async function handleBookmarkMoved(id: string, moveInfo: { parentId?: string }): Promise<void> {
@@ -72,11 +79,24 @@ export async function handleBookmarkMoved(id: string, moveInfo: { parentId?: str
   const [node] = await chrome.bookmarks.get(id);
   if (!node?.url) return;
   await bookmarkManager.addUrlToQueue(node.url, node.title, "bookmark_event", id, { skipMove: true });
+  await kickQueueProcessing();
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "process-queue") await processor.processNext({ retryTransientFailures: true });
 });
+
+export function ensureQueueProcessingAlarm(): void {
+  chrome.alarms.create("process-queue", { periodInMinutes: 1 });
+}
+
+export async function kickQueueProcessing(): Promise<void> {
+  ensureQueueProcessingAlarm();
+  for (let processed = 0; processed < MAX_QUEUE_DRAIN_PER_KICK; processed += 1) {
+    const item = await processor.processNext({ retryTransientFailures: true });
+    if (!item || item.status === "queued") return;
+  }
+}
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   void (async () => {
