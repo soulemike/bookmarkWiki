@@ -11,36 +11,55 @@ const processor = new QueueProcessor(undefined, undefined, guards);
 const syncDispatcher = new SyncDispatcher();
 const MAX_QUEUE_DRAIN_PER_KICK = 5;
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(() => {
+  void handleInstalled().catch((error: unknown) => {
+    console.error("Unable to initialize Bookmark Queue Agent", error);
+  });
+});
+
+export async function handleInstalled(): Promise<void> {
   await guards.hydrate();
   await bookmarkManager.ensureDefaultFolders();
   chrome.contextMenus.create({ id: "add-link-to-bookmark-queue", title: "Add link to Bookmark Queue", contexts: ["link"] });
   ensureQueueProcessingAlarm();
-});
+}
 
-chrome.runtime.onStartup.addListener(async () => {
-  await guards.hydrate();
-  ensureQueueProcessingAlarm();
-  void kickQueueProcessing().catch((error: unknown) => {
+chrome.runtime.onStartup.addListener(() => {
+  void handleStartup().catch((error: unknown) => {
     console.error("Unable to process Bookmark Queue on startup", error);
   });
 });
 
+export async function handleStartup(): Promise<void> {
+  await guards.hydrate();
+  ensureQueueProcessingAlarm();
+  await kickQueueProcessing();
+}
+
 chrome.action.onClicked.addListener((tab) => {
-  void chrome.sidePanel.open({ windowId: tab.windowId }).catch((error: unknown) => {
-    console.error("Unable to open Bookmark Queue side panel", error);
-  });
-  void bookmarkManager.currentTabToQueue(tab).then(() => kickQueueProcessing()).catch((error: unknown) => {
+  void handleActionClicked(tab).catch((error: unknown) => {
     console.error("Unable to add active tab to Bookmark Queue", error);
   });
 });
 
+export async function handleActionClicked(tab: chrome.tabs.Tab): Promise<void> {
+  void chrome.sidePanel.open({ windowId: tab.windowId }).catch((error: unknown) => {
+    console.error("Unable to open Bookmark Queue side panel", error);
+  });
+  await bookmarkManager.currentTabToQueue(tab);
+  await kickQueueProcessing();
+}
+
 chrome.contextMenus.onClicked.addListener(async (info) => {
+  await handleContextMenuClicked(info);
+});
+
+export async function handleContextMenuClicked(info: chrome.contextMenus.OnClickData): Promise<void> {
   if (info.menuItemId === "add-link-to-bookmark-queue" && info.linkUrl) {
     await bookmarkManager.addUrlToQueue(info.linkUrl, info.selectionText || info.linkUrl, "context_menu");
     await kickQueueProcessing();
   }
-});
+}
 
 chrome.bookmarks.onCreated.addListener((id, node) => {
   void handleBookmarkCreated(id, node).catch((error: unknown) => {
@@ -101,7 +120,7 @@ export async function kickQueueProcessing(): Promise<void> {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   void (async () => {
     if (message?.type === "queue:list") sendResponse({ queue: await storage.getQueue(), audit: await storage.getAuditLog() });
-    else if (message?.type === "queue:process-next") sendResponse({ item: await processor.processNext({ retryTransientFailures: false }) });
+    else if (message?.type === "queue:process-next") sendResponse({ item: await processor.processNext({ retryTransientFailures: false, includeLocked: true }) });
     else if (message?.type === "queue:approve") sendResponse({ item: await processor.approve(message.id, message.edits) });
     else if (message?.type === "queue:sync-native") sendResponse({ item: await processor.syncMovedItem(message.id) });
     else if (message?.type === "queue:mark") sendResponse({ item: await processor.mark(message.id, message.status) });

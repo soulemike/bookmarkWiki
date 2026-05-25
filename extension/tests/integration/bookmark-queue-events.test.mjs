@@ -76,7 +76,62 @@ function treeNode(id) {
 }
 
 resetChromeMock();
-const { handleBookmarkCreated, handleBookmarkMoved, kickQueueProcessing } = await import("../../dist/src/background/service-worker.js");
+const { handleActionClicked, handleBookmarkCreated, handleBookmarkMoved, handleContextMenuClicked, handleInstalled, handleStartup, kickQueueProcessing } = await import("../../dist/src/background/service-worker.js");
+
+function queuedItem(suffix) {
+  return {
+    id: `queue-${suffix}`,
+    chromeBookmarkId: `bookmark-${suffix}`,
+    url: `https://example.com/${suffix}`,
+    normalizedUrl: `https://example.com/${suffix}`,
+    originalTitle: `Example ${suffix}`,
+    source: "bookmark_event",
+    status: "queued",
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    attemptCount: 0
+  };
+}
+
+test("install repairs queue processing alarm", async () => {
+  resetChromeMock();
+
+  await handleInstalled();
+
+  assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
+});
+
+test("startup repairs alarm and processes an existing queued item", async () => {
+  resetChromeMock();
+  localStore.queueItems = [queuedItem("startup")];
+
+  await handleStartup();
+
+  assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
+  assert.notEqual(localStore.queueItems[0].status, "queued");
+});
+
+test("action click enqueues active tab and starts processing", async () => {
+  resetChromeMock();
+
+  await handleActionClicked({ windowId: 1, url: "https://example.com/action", title: "Action bookmark" });
+
+  assert.equal(localStore.queueItems.length, 1);
+  assert.equal(localStore.queueItems[0].source, "current_tab");
+  assert.notEqual(localStore.queueItems[0].status, "queued");
+  assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
+});
+
+test("context menu enqueues link and starts processing", async () => {
+  resetChromeMock();
+
+  await handleContextMenuClicked({ menuItemId: "add-link-to-bookmark-queue", linkUrl: "https://example.com/context", selectionText: "Context bookmark" });
+
+  assert.equal(localStore.queueItems.length, 1);
+  assert.equal(localStore.queueItems[0].source, "context_menu");
+  assert.notEqual(localStore.queueItems[0].status, "queued");
+  assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
+});
 
 test("created bookmarks already inside _Bookmark Queue are queued when normal routing is off", async () => {
   resetChromeMock();
@@ -119,21 +174,20 @@ test("bookmarks outside _Bookmark Queue still require normal routing opt-in", as
 
 test("queue processing kick drains multiple queued items without manual sidepanel action", async () => {
   resetChromeMock();
-  localStore.queueItems = ["one", "two"].map((suffix) => ({
-    id: `queue-${suffix}`,
-    chromeBookmarkId: `bookmark-${suffix}`,
-    url: `https://example.com/${suffix}`,
-    normalizedUrl: `https://example.com/${suffix}`,
-    originalTitle: `Example ${suffix}`,
-    source: "bookmark_event",
-    status: "queued",
-    createdAt: new Date(0).toISOString(),
-    updatedAt: new Date(0).toISOString(),
-    attemptCount: 0
-  }));
+  localStore.queueItems = ["one", "two"].map(queuedItem);
 
   await kickQueueProcessing();
 
   assert.deepEqual(localStore.queueItems.map((item) => item.status), ["needs_review", "needs_review"]);
   assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
+});
+
+test("queue processing kick is bounded to five items per immediate drain", async () => {
+  resetChromeMock();
+  localStore.queueItems = ["1", "2", "3", "4", "5", "6"].map(queuedItem);
+
+  await kickQueueProcessing();
+
+  assert.equal(localStore.queueItems.filter((item) => item.status !== "queued").length, 5);
+  assert.equal(localStore.queueItems.filter((item) => item.status === "queued").length, 1);
 });

@@ -11,6 +11,7 @@ const LOCK_MS = 2 * 60 * 1000;
 
 export interface ProcessNextOptions {
   retryTransientFailures?: boolean;
+  includeLocked?: boolean;
 }
 
 export class QueueProcessor {
@@ -24,14 +25,24 @@ export class QueueProcessor {
   async processNext(options: ProcessNextOptions = {}): Promise<BookmarkQueueItem | undefined> {
     const queue = await storage.getQueue();
     const now = Date.now();
-    const item = queue.find((candidate) => candidate.status === "queued" && (!candidate.lockedUntil || new Date(candidate.lockedUntil).getTime() < now));
+    const item = queue.find((candidate) => candidate.status === "queued" && (options.includeLocked || !candidate.lockedUntil || new Date(candidate.lockedUntil).getTime() < now));
     if (!item) return undefined;
     item.lockedUntil = new Date(now + LOCK_MS).toISOString();
     item.attemptCount += 1;
     item.lastAttemptAt = new Date(now).toISOString();
     await storage.upsertQueueItem(item);
 
-    const result = await this.classifier.classify(item);
+    let result;
+    try {
+      result = await this.classifier.classify(item);
+    } catch (error) {
+      item.status = "needs_review";
+      item.lastErrorCode = "provider_unavailable";
+      item.error = error instanceof Error ? error.message : "Unexpected classification error";
+      item.lockedUntil = undefined;
+      await storage.upsertQueueItem(item);
+      return item;
+    }
     if (!result.ok) {
       const providerConfig = await storage.getProviderConfig();
       const retryLimit = providerConfig?.retry_count ?? 1;

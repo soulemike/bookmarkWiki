@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { QueueProcessor } from "../../dist/src/background/queue-processor.js";
+import { OPENAI_CHATGPT_CODEX_BASE_URL } from "../../dist/src/providers/openai-chatgpt-oauth.js";
 
 let localStore;
 let movedTo;
@@ -51,6 +52,15 @@ function resetChromeMock() {
       }
     },
     bookmarks: {
+      getTree: async () => [{
+        id: "0",
+        title: "",
+        children: [{
+          id: "1",
+          title: "Bookmarks Bar",
+          children: [{ id: "work-folder", parentId: "1", title: "Work", children: [] }]
+        }]
+      }],
       get: async () => [{ id: "bookmark-1", parentId: "queue-folder", index: 0, title: "Example", url: "https://example.com" }],
       update: async (_id, changes) => { updatedTitle = changes.title; },
       move: async (_id, destination) => { movedTo = destination.parentId; }
@@ -169,3 +179,60 @@ test("QueueProcessor clears stale display text when requeueing for reclassificat
   assert.equal(item.reason, undefined);
   assert.equal(item.lastErrorCode, undefined);
 });
+
+test("QueueProcessor manual processing reaches OAuth provider even when queued item is locked", async () => {
+  resetChromeMock();
+  localStore.settings.provider = "openai-chatgpt-oauth";
+  localStore.providerConfig = {
+    provider: "openai-chatgpt-oauth",
+    base_url: OPENAI_CHATGPT_CODEX_BASE_URL,
+    model: "gpt-5.5",
+    access_token: "oauth-access-token",
+    refresh_token: "oauth-refresh-token",
+    expires_at: "2099-01-01T00:00:00.000Z",
+    temperature: 0.1,
+    max_tokens: 1200,
+    timeout_seconds: 30,
+    retry_count: 1
+  };
+  localStore.queueItems[0].lockedUntil = new Date(Date.now() + 60_000).toISOString();
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return new Response(codexSse(JSON.stringify({
+      url: "https://example.com",
+      original_title: "Example",
+      descriptive_title: "Example classified",
+      summary: "Summary",
+      target_folder: "/Bookmarks Bar/Work",
+      tags: ["example"],
+      content_type: "reference",
+      audience: "general",
+      confidence: 0.73,
+      recommended_action: "needs_review",
+      reason: "OAuth provider reached."
+    })), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  };
+
+  try {
+    const processor = new QueueProcessor();
+    const item = await processor.processNext({ retryTransientFailures: false, includeLocked: true });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, `${OPENAI_CHATGPT_CODEX_BASE_URL}/responses`);
+    assert.equal(calls[0].options.headers.Authorization, "Bearer oauth-access-token");
+    assert.equal(item.status, "needs_review");
+    assert.equal(item.reason, "OAuth provider reached.");
+    assert.equal(item.lockedUntil, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+function codexSse(outputText) {
+  return [
+    `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: outputText })}`,
+    "data: [DONE]"
+  ].join("\n\n");
+}

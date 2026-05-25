@@ -1,6 +1,7 @@
 import type { BookmarkQueueItem } from "../../models/bookmark.js";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
+let statusMessage = "";
 
 async function send<T>(message: unknown): Promise<T> {
   return chrome.runtime.sendMessage(message) as Promise<T>;
@@ -14,9 +15,14 @@ async function load(): Promise<void> {
       <button id="process">Classify next</button>
       <button id="rollback">Rollback last move</button>
     </header>
+    ${statusMessage ? `<p class="status">${escapeHtml(statusMessage)}</p>` : ""}
     <section>${queue.map(renderItem).join("") || "<p>No queued bookmarks yet.</p>"}</section>
   `;
-  document.querySelector<HTMLButtonElement>("#process")?.addEventListener("click", async () => { await send({ type: "queue:process-next" }); await load(); });
+  document.querySelector<HTMLButtonElement>("#process")?.addEventListener("click", async () => {
+    const response = await send<{ item?: BookmarkQueueItem }>({ type: "queue:process-next" });
+    statusMessage = classifyStatusMessage(response.item);
+    await load();
+  });
   document.querySelector<HTMLButtonElement>("#rollback")?.addEventListener("click", async () => { await send({ type: "queue:rollback-last" }); await load(); });
   document.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -28,6 +34,13 @@ async function load(): Promise<void> {
       await load();
     });
   });
+}
+
+function classifyStatusMessage(item: BookmarkQueueItem | undefined): string {
+  if (!item) return "No queued bookmark is ready to classify.";
+  if (item.error) return `Classification failed: ${item.error}`;
+  if (item.status === "queued") return "Classification was attempted and will retry shortly.";
+  return `Classification updated bookmark status to ${item.status}.`;
 }
 
 function renderItem(item: BookmarkQueueItem): string {
