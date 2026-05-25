@@ -43,10 +43,6 @@ export interface OpenAIChatGptOAuthProviderConfig {
   provider: "openai-chatgpt-oauth";
   base_url: string;
   model: string;
-  client_id: string;
-  authorization_url: string;
-  token_url: string;
-  scopes: string;
   access_token?: string;
   refresh_token?: string;
   expires_at?: string;

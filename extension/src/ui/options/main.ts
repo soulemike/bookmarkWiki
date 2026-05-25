@@ -1,6 +1,6 @@
 import type { ProviderConfig, UserSettings } from "../../background/storage.js";
 import type { BookmarkTaxonomy } from "../../models/taxonomy.js";
-import { validateOAuthConnectConfig } from "../../providers/openai-chatgpt-oauth.js";
+import { OPENAI_CHATGPT_OAUTH_AUTHORIZE_URL, OPENAI_CHATGPT_OAUTH_CLIENT_ID, validateOAuthConnectConfig } from "../../providers/openai-chatgpt-oauth.js";
 import { providerOriginPattern, validateProviderBaseUrl } from "../../providers/openai-compatible.js";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -53,11 +53,7 @@ async function load(): Promise<void> {
       <label>API project key or compatible bearer token <input name="api_key" type="password" placeholder="Stored in chrome.storage.local only; leave blank to keep saved key"></label>
       <section class="provider-note" aria-label="ChatGPT OAuth settings">
         <strong>ChatGPT OAuth settings</strong>
-        <p>Register this extension redirect URI with the OAuth app: <code>${chrome.identity.getRedirectURL("openai-chatgpt-oauth")}</code></p>
-        <label>OAuth client ID <input name="client_id" value="${escapeAttribute(chatGptOAuthConfig?.client_id ?? "")}"></label>
-        <label>Authorization URL <input name="authorization_url" value="${escapeAttribute(chatGptOAuthConfig?.authorization_url ?? "")}" placeholder="https://.../authorize"></label>
-        <label>Token URL <input name="token_url" value="${escapeAttribute(chatGptOAuthConfig?.token_url ?? "")}" placeholder="https://.../token"></label>
-        <label>Scopes <input name="scopes" value="${escapeAttribute(chatGptOAuthConfig?.scopes ?? "openid profile email")}"></label>
+        <p>This provider uses the same public OpenAI OAuth app metadata as Codex/OpenCode-style integrations: <code>${OPENAI_CHATGPT_OAUTH_AUTHORIZE_URL}</code> with client <code>${OPENAI_CHATGPT_OAUTH_CLIENT_ID}</code>. No client ID or endpoint setup is required.</p>
         <p class="hint">${chatGptOAuthConfig?.access_token ? `OAuth connected${chatGptOAuthConfig.expires_at ? ` until ${chatGptOAuthConfig.expires_at}` : ""}.` : "OAuth is not connected yet."}</p>
       </section>
       <label>Excluded domains <input name="excludedDomains" value="${escapeAttribute(settings.excludedDomains.join(", "))}"></label>
@@ -146,22 +142,12 @@ function buildProviderConfig(data: FormData, savedProviderConfig: ProviderConfig
     retry_count: 1
   };
   if (data.get("provider") === "openai-chatgpt-oauth") {
-    const nextOAuthConfig = {
-      client_id: String(data.get("client_id") ?? "").trim(),
-      authorization_url: String(data.get("authorization_url") ?? "").trim(),
-      token_url: String(data.get("token_url") ?? "").trim(),
-      scopes: String(data.get("scopes") ?? "").trim()
-    };
     const canReuseTokens = savedProviderConfig?.provider === "openai-chatgpt-oauth"
       && savedProviderConfig.base_url === baseConfig.base_url
-      && savedProviderConfig.client_id === nextOAuthConfig.client_id
-      && savedProviderConfig.authorization_url === nextOAuthConfig.authorization_url
-      && savedProviderConfig.token_url === nextOAuthConfig.token_url
-      && savedProviderConfig.scopes === nextOAuthConfig.scopes;
+      && !hasLegacyOAuthMetadata(savedProviderConfig);
     return {
       provider: "openai-chatgpt-oauth",
       ...baseConfig,
-      ...nextOAuthConfig,
       access_token: canReuseTokens ? savedProviderConfig.access_token : undefined,
       refresh_token: canReuseTokens ? savedProviderConfig.refresh_token : undefined,
       expires_at: canReuseTokens ? savedProviderConfig.expires_at : undefined
@@ -182,11 +168,12 @@ function validateProviderConfig(config: ProviderConfig): string | undefined {
 
 function providerOrigins(config: ProviderConfig): string[] {
   const origins = [providerOriginPattern(config.base_url)].filter((origin): origin is string => Boolean(origin));
-  if (config.provider === "openai-chatgpt-oauth") {
-    const tokenOrigin = providerOriginPattern(config.token_url);
-    if (tokenOrigin && !origins.includes(tokenOrigin)) origins.push(tokenOrigin);
-  }
   return origins;
+}
+
+function hasLegacyOAuthMetadata(config: ProviderConfig): boolean {
+  const value = config as unknown as Record<string, unknown>;
+  return ["client_id", "authorization_url", "token_url", "scopes"].some((field) => field in value);
 }
 
 function showStatus(message: string, className: "saved" | "error"): void {

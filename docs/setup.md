@@ -11,7 +11,7 @@ This document supports the Bookmark Queue Agent MVP implementation.
 
 The default provider is the local rule-based classifier. To use the OpenAI-compatible provider, supply an API project key or a token for an OpenAI-compatible local bridge in the options page. Leaving the key field blank keeps the previously saved local key.
 
-To use OpenAI ChatGPT OAuth, select **OpenAI ChatGPT OAuth**, register the redirect URI shown in the options page with the OAuth app, enter the OAuth client ID, authorization URL, token URL, scopes, API base URL, and model, then choose **Save and connect ChatGPT OAuth**. The extension uses Authorization Code with PKCE through `chrome.identity.launchWebAuthFlow`, stores returned access/refresh tokens in `chrome.storage.local`, and refreshes access tokens before classification when a refresh token is available.
+To use OpenAI ChatGPT OAuth, select **OpenAI ChatGPT OAuth**, keep or adjust the API base URL/model, then choose **Save and connect ChatGPT OAuth**. The extension uses fixed OpenAI public OAuth metadata like Codex/OpenCode-style integrations, runs Authorization Code with PKCE through `chrome.identity.launchWebAuthFlow`, stores returned access/refresh tokens in `chrome.storage.local`, and refreshes access tokens before classification when a refresh token is available. No OAuth client ID, authorization URL, token URL, or scope setup is required.
 
 OpenAI account web sessions, ChatGPT subscriptions, Codex account login, browser cookies, and copied session tokens are not API credentials for this extension. If classification reports quota or billing details, check the API account/project or OAuth client associated with the configured provider rather than the ChatGPT subscription status.
 

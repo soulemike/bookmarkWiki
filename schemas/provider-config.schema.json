@@ -18,15 +18,11 @@
     },
     {
       "type": "object",
-      "required": ["provider", "base_url", "model", "client_id", "authorization_url", "token_url", "scopes", "temperature", "max_tokens", "timeout_seconds", "retry_count"],
+      "required": ["provider", "base_url", "model", "temperature", "max_tokens", "timeout_seconds", "retry_count"],
       "properties": {
         "provider": { "const": "openai-chatgpt-oauth" },
-        "base_url": { "type": "string", "description": "OpenAI API base URL used after OAuth token acquisition." },
+        "base_url": { "type": "string", "description": "OpenAI API base URL used after OAuth token acquisition. OAuth itself uses fixed OpenAI public client metadata." },
         "model": { "type": "string" },
-        "client_id": { "type": "string" },
-        "authorization_url": { "type": "string" },
-        "token_url": { "type": "string" },
-        "scopes": { "type": "string" },
         "access_token": { "type": "string" },
         "refresh_token": { "type": "string" },
         "expires_at": { "type": "string", "format": "date-time" },

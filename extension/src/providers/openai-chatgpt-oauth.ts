@@ -16,6 +16,10 @@ type ConfigUpdater = (config: OpenAIChatGptOAuthProviderConfig) => Promise<void>
 
 const DEFAULT_REDIRECT_PATH = "openai-chatgpt-oauth";
 const CODE_VERIFIER_BYTES = 32;
+export const OPENAI_CHATGPT_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+export const OPENAI_CHATGPT_OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize";
+export const OPENAI_CHATGPT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
+export const OPENAI_CHATGPT_OAUTH_SCOPES = "openid profile email offline_access";
 
 export class OpenAIChatGptOAuthProvider implements AIProvider {
   id = "openai-chatgpt-oauth";
@@ -25,15 +29,9 @@ export class OpenAIChatGptOAuthProvider implements AIProvider {
 
   async validateConfig(config: ProviderConfig): Promise<ProviderResult<{ model: string }>> {
     if (config.provider !== "openai-chatgpt-oauth") return { ok: false, code: "invalid_config", message: "ChatGPT OAuth provider config is required", retryable: false };
-    if (!config.client_id.trim()) return { ok: false, code: "invalid_config", message: "OAuth client ID is required", retryable: false };
-    if (!config.authorization_url.trim() || !config.token_url.trim()) return { ok: false, code: "invalid_config", message: "OAuth authorization and token URLs are required", retryable: false };
     if (!config.base_url || !config.model) return { ok: false, code: "invalid_config", message: "Base URL and model are required", retryable: false };
     const baseUrlError = validateProviderBaseUrl(config.base_url);
     if (baseUrlError) return { ok: false, code: "invalid_config", message: baseUrlError, retryable: false };
-    const authUrlError = validateHttpsUrl(config.authorization_url, "Authorization URL");
-    if (authUrlError) return { ok: false, code: "invalid_config", message: authUrlError, retryable: false };
-    const tokenUrlError = validateHttpsUrl(config.token_url, "Token URL");
-    if (tokenUrlError) return { ok: false, code: "invalid_config", message: tokenUrlError, retryable: false };
     if (!config.access_token) return { ok: false, code: "auth_failed", message: "Connect ChatGPT OAuth before classifying bookmarks", retryable: false };
     return { ok: true, value: { model: config.model } };
   }
@@ -81,6 +79,7 @@ export class OpenAIChatGptOAuthProvider implements AIProvider {
   }
 
   private async currentAccessToken(): Promise<ProviderResult<string>> {
+    if (hasLegacyOAuthMetadata(this.config)) return { ok: false, code: "auth_failed", message: "Reconnect ChatGPT OAuth to migrate the provider configuration", retryable: false };
     if (!this.config.access_token) return { ok: false, code: "auth_failed", message: "Connect ChatGPT OAuth before classifying bookmarks", retryable: false };
     if (!isExpired(this.config.expires_at)) return { ok: true, value: this.config.access_token };
     if (!this.config.refresh_token) return { ok: false, code: "auth_failed", message: "ChatGPT OAuth access expired; reconnect the provider", retryable: false };
@@ -99,12 +98,12 @@ export async function connectChatGptOAuth(config: OpenAIChatGptOAuthProviderConf
   const verifier = base64UrlEncode(crypto.getRandomValues(new Uint8Array(CODE_VERIFIER_BYTES)));
   const challenge = await pkceChallenge(verifier);
   const state = crypto.randomUUID();
-  const authUrl = buildAuthorizationUrl(config, redirectUri, challenge, state);
+  const authUrl = buildAuthorizationUrl(redirectUri, challenge, state);
   const redirectUrl = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true });
   if (!redirectUrl) throw new Error("OAuth flow did not return a redirect URL");
   const code = parseAuthorizationCode(redirectUrl, state);
-  const tokenResponse = await exchangeAuthorizationCode(config, code, verifier, redirectUri);
-  return { ...config, ...tokensToConfig(tokenResponse) };
+  const tokenResponse = await exchangeAuthorizationCode(code, verifier, redirectUri);
+  return { ...disconnectChatGptOAuth(config), ...tokensToConfig(tokenResponse) };
 }
 
 export function disconnectChatGptOAuth(config: OpenAIChatGptOAuthProviderConfig): OpenAIChatGptOAuthProviderConfig {
@@ -112,10 +111,6 @@ export function disconnectChatGptOAuth(config: OpenAIChatGptOAuthProviderConfig)
     provider: config.provider,
     base_url: config.base_url,
     model: config.model,
-    client_id: config.client_id,
-    authorization_url: config.authorization_url,
-    token_url: config.token_url,
-    scopes: config.scopes,
     temperature: config.temperature,
     max_tokens: config.max_tokens,
     timeout_seconds: config.timeout_seconds,
@@ -123,17 +118,18 @@ export function disconnectChatGptOAuth(config: OpenAIChatGptOAuthProviderConfig)
   };
 }
 
-export function buildAuthorizationUrl(config: OpenAIChatGptOAuthProviderConfig, redirectUri: string, codeChallenge: string, state: string): string {
-  const url = new URL(config.authorization_url);
+export function buildAuthorizationUrl(redirectUri: string, codeChallenge: string, state: string): string {
+  const url = new URL(OPENAI_CHATGPT_OAUTH_AUTHORIZE_URL);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("client_id", config.client_id);
+  url.searchParams.set("client_id", OPENAI_CHATGPT_OAUTH_CLIENT_ID);
   url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("scope", config.scopes.trim());
+  url.searchParams.set("scope", OPENAI_CHATGPT_OAUTH_SCOPES);
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", state);
-  url.searchParams.set("access_type", "offline");
-  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("id_token_add_organizations", "true");
+  url.searchParams.set("codex_cli_simplified_flow", "true");
+  url.searchParams.set("originator", "bookmark-queue-agent");
   return url.toString();
 }
 
@@ -151,26 +147,20 @@ export function parseAuthorizationCode(redirectUrl: string, expectedState: strin
 export function validateOAuthConnectConfig(config: OpenAIChatGptOAuthProviderConfig): string | undefined {
   const baseUrlError = validateProviderBaseUrl(config.base_url);
   if (baseUrlError) return baseUrlError;
-  if (!config.client_id.trim()) return "OAuth client ID is required";
-  return validateHttpsUrl(config.authorization_url, "Authorization URL") ?? validateHttpsUrl(config.token_url, "Token URL") ?? (!config.scopes.trim() ? "OAuth scopes are required" : undefined);
+  return config.model.trim() ? undefined : "Model is required";
 }
 
-function validateHttpsUrl(rawUrl: string, label: string): string | undefined {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    return `${label} must be a valid URL`;
-  }
-  return url.protocol === "https:" ? undefined : `${label} must use https://`;
+function hasLegacyOAuthMetadata(config: OpenAIChatGptOAuthProviderConfig): boolean {
+  const value = config as unknown as Record<string, unknown>;
+  return ["client_id", "authorization_url", "token_url", "scopes"].some((field) => field in value);
 }
 
-async function exchangeAuthorizationCode(config: OpenAIChatGptOAuthProviderConfig, code: string, verifier: string, redirectUri: string): Promise<TokenResponse> {
-  return tokenRequest(config.token_url, new URLSearchParams({
+async function exchangeAuthorizationCode(code: string, verifier: string, redirectUri: string): Promise<TokenResponse> {
+  return tokenRequest(new URLSearchParams({
     grant_type: "authorization_code",
     code,
     redirect_uri: redirectUri,
-    client_id: config.client_id,
+    client_id: OPENAI_CHATGPT_OAUTH_CLIENT_ID,
     code_verifier: verifier
   }));
 }
@@ -178,10 +168,10 @@ async function exchangeAuthorizationCode(config: OpenAIChatGptOAuthProviderConfi
 async function refreshAccessToken(config: OpenAIChatGptOAuthProviderConfig): Promise<ProviderResult<TokenResponse>> {
   if (!config.refresh_token) return { ok: false, code: "auth_failed", message: "No refresh token is available; reconnect ChatGPT OAuth", retryable: false };
   try {
-    const tokenResponse = await tokenRequest(config.token_url, new URLSearchParams({
+    const tokenResponse = await tokenRequest(new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: config.refresh_token,
-      client_id: config.client_id
+      client_id: OPENAI_CHATGPT_OAUTH_CLIENT_ID
     }));
     return { ok: true, value: tokenResponse };
   } catch (error) {
@@ -189,8 +179,8 @@ async function refreshAccessToken(config: OpenAIChatGptOAuthProviderConfig): Pro
   }
 }
 
-async function tokenRequest(tokenUrl: string, body: URLSearchParams): Promise<TokenResponse> {
-  const response = await fetch(tokenUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+async function tokenRequest(body: URLSearchParams): Promise<TokenResponse> {
+  const response = await fetch(OPENAI_CHATGPT_OAUTH_TOKEN_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
   if (!response.ok) throw new Error(`OAuth token endpoint returned HTTP ${response.status}${await tokenErrorSuffix(response)}`);
   const value = await response.json() as Partial<TokenResponse>;
   if (!value.access_token) throw new Error("OAuth token endpoint did not return an access token");
