@@ -4,6 +4,18 @@ import { validateClassificationResult } from "../models/classification.js";
 import type { AIProvider, ProviderResult } from "./types.js";
 import { authorizationHeader, normalizeHttpFailure, readProviderError, validateProviderBaseUrl } from "./openai-compatible.js";
 
+interface DeviceCodeResponse {
+  device_auth_id: string;
+  user_code?: string;
+  usercode?: string;
+  interval?: number | string;
+}
+
+interface DeviceTokenResponse {
+  authorization_code: string;
+  code_verifier: string;
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token?: string;
@@ -12,14 +24,30 @@ interface TokenResponse {
   scope?: string;
 }
 
+export interface DeviceAuthorizationSession {
+  device_auth_id: string;
+  user_code: string;
+  interval_ms: number;
+  verification_url: string;
+}
+
+export type DeviceAuthorizationPollResult =
+  | { status: "pending" }
+  | { status: "connected"; config: OpenAIChatGptOAuthProviderConfig };
+
 type ConfigUpdater = (config: OpenAIChatGptOAuthProviderConfig) => Promise<void>;
 
-const DEFAULT_REDIRECT_PATH = "openai-chatgpt-oauth";
-const CODE_VERIFIER_BYTES = 32;
 export const OPENAI_CHATGPT_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
-export const OPENAI_CHATGPT_OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize";
-export const OPENAI_CHATGPT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
 export const OPENAI_CHATGPT_OAUTH_SCOPES = "openid profile email offline_access";
+export const OPENAI_CHATGPT_DEVICE_USER_CODE_URL = "https://auth.openai.com/api/accounts/deviceauth/usercode";
+export const OPENAI_CHATGPT_DEVICE_TOKEN_URL = "https://auth.openai.com/api/accounts/deviceauth/token";
+export const OPENAI_CHATGPT_DEVICE_APPROVAL_URL = "https://auth.openai.com/codex/device";
+export const OPENAI_CHATGPT_DEVICE_CALLBACK_URL = "https://auth.openai.com/deviceauth/callback";
+export const OPENAI_CHATGPT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
+
+const DEVICE_CODE_TIMEOUT_MS = 15 * 60_000;
+const DEVICE_CODE_DEFAULT_INTERVAL_MS = 5_000;
+const DEVICE_CODE_MIN_INTERVAL_MS = 1_000;
 
 export class OpenAIChatGptOAuthProvider implements AIProvider {
   id = "openai-chatgpt-oauth";
@@ -94,16 +122,14 @@ export class OpenAIChatGptOAuthProvider implements AIProvider {
 export async function connectChatGptOAuth(config: OpenAIChatGptOAuthProviderConfig): Promise<OpenAIChatGptOAuthProviderConfig> {
   const validation = validateOAuthConnectConfig(config);
   if (validation) throw new Error(validation);
-  const redirectUri = chrome.identity.getRedirectURL(DEFAULT_REDIRECT_PATH);
-  const verifier = base64UrlEncode(crypto.getRandomValues(new Uint8Array(CODE_VERIFIER_BYTES)));
-  const challenge = await pkceChallenge(verifier);
-  const state = crypto.randomUUID();
-  const authUrl = buildAuthorizationUrl(redirectUri, challenge, state);
-  const redirectUrl = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true });
-  if (!redirectUrl) throw new Error("OAuth flow did not return a redirect URL");
-  const code = parseAuthorizationCode(redirectUrl, state);
-  const tokenResponse = await exchangeAuthorizationCode(code, verifier, redirectUri);
-  return { ...disconnectChatGptOAuth(config), ...tokensToConfig(tokenResponse) };
+  const session = await startChatGptOAuthDeviceAuthorization();
+  const deadline = Date.now() + DEVICE_CODE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const result = await pollChatGptOAuthDeviceAuthorization(config, session);
+    if (result.status === "connected") return result.config;
+    await sleep(Math.min(session.interval_ms, Math.max(deadline - Date.now(), 0)));
+  }
+  throw new Error("OpenAI device authorization timed out before approval completed");
 }
 
 export function disconnectChatGptOAuth(config: OpenAIChatGptOAuthProviderConfig): OpenAIChatGptOAuthProviderConfig {
@@ -118,30 +144,29 @@ export function disconnectChatGptOAuth(config: OpenAIChatGptOAuthProviderConfig)
   };
 }
 
-export function buildAuthorizationUrl(redirectUri: string, codeChallenge: string, state: string): string {
-  const url = new URL(OPENAI_CHATGPT_OAUTH_AUTHORIZE_URL);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("client_id", OPENAI_CHATGPT_OAUTH_CLIENT_ID);
-  url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("scope", OPENAI_CHATGPT_OAUTH_SCOPES);
-  url.searchParams.set("code_challenge", codeChallenge);
-  url.searchParams.set("code_challenge_method", "S256");
-  url.searchParams.set("state", state);
-  url.searchParams.set("id_token_add_organizations", "true");
-  url.searchParams.set("codex_cli_simplified_flow", "true");
-  url.searchParams.set("originator", "bookmark-queue-agent");
+export function deviceAuthorizationUrl(userCode: string): string {
+  const url = new URL(OPENAI_CHATGPT_DEVICE_APPROVAL_URL);
+  if (userCode) url.searchParams.set("user_code", userCode);
   return url.toString();
 }
 
-export function parseAuthorizationCode(redirectUrl: string, expectedState: string): string {
-  const url = new URL(redirectUrl);
-  const error = url.searchParams.get("error");
-  if (error) throw new Error(`OAuth authorization failed: ${error}`);
-  const state = url.searchParams.get("state");
-  if (state !== expectedState) throw new Error("OAuth state mismatch");
-  const code = url.searchParams.get("code");
-  if (!code) throw new Error("OAuth redirect did not include an authorization code");
-  return code;
+export async function startChatGptOAuthDeviceAuthorization(): Promise<DeviceAuthorizationSession> {
+  const deviceCode = await requestDeviceCode();
+  const userCode = deviceCode.user_code ?? deviceCode.usercode;
+  if (!userCode) throw new Error("OpenAI device authorization response was missing a user code");
+  return {
+    device_auth_id: deviceCode.device_auth_id,
+    user_code: userCode,
+    interval_ms: normalizeDeviceIntervalMs(deviceCode.interval),
+    verification_url: deviceAuthorizationUrl(userCode)
+  };
+}
+
+export async function pollChatGptOAuthDeviceAuthorization(config: OpenAIChatGptOAuthProviderConfig, session: DeviceAuthorizationSession): Promise<DeviceAuthorizationPollResult> {
+  const deviceToken = await pollDeviceTokenOnce(session);
+  if (!deviceToken) return { status: "pending" };
+  const tokenResponse = await exchangeDeviceAuthorizationCode(deviceToken.authorization_code, deviceToken.code_verifier);
+  return { status: "connected", config: { ...disconnectChatGptOAuth(config), ...tokensToConfig(tokenResponse) } };
 }
 
 export function validateOAuthConnectConfig(config: OpenAIChatGptOAuthProviderConfig): string | undefined {
@@ -155,11 +180,38 @@ function hasLegacyOAuthMetadata(config: OpenAIChatGptOAuthProviderConfig): boole
   return ["client_id", "authorization_url", "token_url", "scopes"].some((field) => field in value);
 }
 
-async function exchangeAuthorizationCode(code: string, verifier: string, redirectUri: string): Promise<TokenResponse> {
+async function requestDeviceCode(): Promise<DeviceCodeResponse> {
+  const response = await fetch(OPENAI_CHATGPT_DEVICE_USER_CODE_URL, {
+    method: "POST",
+    headers: openAIDeviceHeaders("application/json"),
+    body: JSON.stringify({ client_id: OPENAI_CHATGPT_OAUTH_CLIENT_ID })
+  });
+  if (response.status === 404) throw new Error("OpenAI device authorization is not available for this account or server.");
+  if (!response.ok) throw new Error(`OpenAI device authorization returned HTTP ${response.status}${await tokenErrorSuffix(response)}`);
+  const value = await response.json() as Partial<DeviceCodeResponse>;
+  const userCode = value.user_code ?? value.usercode;
+  if (!value.device_auth_id || !userCode) throw new Error("OpenAI device authorization response was missing a device ID or user code");
+  return { device_auth_id: value.device_auth_id, user_code: userCode, interval: value.interval };
+}
+
+async function pollDeviceTokenOnce(session: DeviceAuthorizationSession): Promise<DeviceTokenResponse | undefined> {
+  const response = await fetch(OPENAI_CHATGPT_DEVICE_TOKEN_URL, {
+    method: "POST",
+    headers: openAIDeviceHeaders("application/json"),
+    body: JSON.stringify({ device_auth_id: session.device_auth_id, user_code: session.user_code })
+  });
+  if (response.status === 403 || response.status === 404) return undefined;
+  if (!response.ok) throw new Error(`OpenAI device token polling returned HTTP ${response.status}${await tokenErrorSuffix(response)}`);
+  const value = await response.json() as Partial<DeviceTokenResponse>;
+  if (!value.authorization_code || !value.code_verifier) throw new Error("OpenAI device token response was missing authorization code data");
+  return { authorization_code: value.authorization_code, code_verifier: value.code_verifier };
+}
+
+async function exchangeDeviceAuthorizationCode(code: string, verifier: string): Promise<TokenResponse> {
   return tokenRequest(new URLSearchParams({
     grant_type: "authorization_code",
     code,
-    redirect_uri: redirectUri,
+    redirect_uri: OPENAI_CHATGPT_DEVICE_CALLBACK_URL,
     client_id: OPENAI_CHATGPT_OAUTH_CLIENT_ID,
     code_verifier: verifier
   }));
@@ -192,6 +244,10 @@ async function tokenErrorSuffix(response: Response): Promise<string> {
   return text.trim() ? `: ${text.slice(0, 500)}` : "";
 }
 
+function openAIDeviceHeaders(contentType: string): Record<string, string> {
+  return { "Content-Type": contentType, originator: "bookmark-queue-agent", "User-Agent": "bookmark-queue-agent" };
+}
+
 function tokensToConfig(tokenResponse: TokenResponse, previousConfig?: OpenAIChatGptOAuthProviderConfig): Pick<OpenAIChatGptOAuthProviderConfig, "access_token" | "refresh_token" | "expires_at"> {
   return {
     access_token: tokenResponse.access_token,
@@ -205,14 +261,12 @@ function isExpired(expiresAt: string | undefined): boolean {
   return new Date(expiresAt).getTime() <= Date.now() + 60_000;
 }
 
-async function pkceChallenge(verifier: string): Promise<string> {
-  const bytes = new TextEncoder().encode(verifier);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return base64UrlEncode(new Uint8Array(digest));
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+function normalizeDeviceIntervalMs(interval: number | string | undefined): number {
+  const seconds = typeof interval === "string" ? Number(interval) : interval;
+  if (!Number.isFinite(seconds)) return DEVICE_CODE_DEFAULT_INTERVAL_MS;
+  return Math.max(Number(seconds) * 1000, DEVICE_CODE_MIN_INTERVAL_MS);
 }

@@ -11,7 +11,7 @@ This document supports the Bookmark Queue Agent MVP implementation.
 
 The default provider is the local rule-based classifier. To use the OpenAI-compatible provider, supply an API project key or a token for an OpenAI-compatible local bridge in the options page. Leaving the key field blank keeps the previously saved local key.
 
-To use OpenAI ChatGPT OAuth, select **OpenAI ChatGPT OAuth**, keep or adjust the API base URL/model, then choose **Save and connect ChatGPT OAuth**. The extension uses fixed OpenAI public OAuth metadata like Codex/OpenCode-style integrations, runs Authorization Code with PKCE through `chrome.identity.launchWebAuthFlow`, stores returned access/refresh tokens in `chrome.storage.local`, and refreshes access tokens before classification when a refresh token is available. No OAuth client ID, authorization URL, token URL, or scope setup is required.
+To use OpenAI ChatGPT OAuth, select **OpenAI ChatGPT OAuth**, keep or adjust the API base URL/model, then choose **Save and connect ChatGPT OAuth**. The extension uses OpenAI's device authorization flow like Codex/OpenCode-style integrations: it opens an OpenAI approval page with a user code, polls for approval, exchanges the approved authorization code through `https://auth.openai.com/oauth/token`, stores returned access/refresh tokens in `chrome.storage.local`, and refreshes access tokens before classification when a refresh token is available. No OAuth client ID, redirect URI, authorization URL, token URL, or scope setup is required.
 
 OpenAI account web sessions, ChatGPT subscriptions, Codex account login, browser cookies, and copied session tokens are not API credentials for this extension. If classification reports quota or billing details, check the API account/project or OAuth client associated with the configured provider rather than the ChatGPT subscription status.
 
@@ -63,7 +63,8 @@ The repo includes a Windows-first native messaging host that lets the extension 
 
    Use `-Browser Edge` for Microsoft Edge or `-Browser Both` to register both. Use `-Machine` only when installing for all users from an elevated PowerShell session.
 
-4. Open the extension options page, click **Test native host**, then enable **Write moved bookmarks to the local native host**.
-5. Set **Native host target path** to a local Windows folder such as `C:\Users\you\Documents\BookmarkWiki`.
+4. Open the extension options page and click **Test connection** in the Windows native host sync section.
+5. After the test passes, enable **Enable local file sync for approved bookmarks**.
+6. Set **Folder to write files to** to a local Windows folder such as `C:\Users\you\Documents\BookmarkWiki`.
 
 The installer writes `native-host/manifests/chrome-windows.installed.json` with an absolute launcher path and the exact `chrome-extension://<extension-id>/` origin, then registers `com.bookmark_queue_agent.host` under the Chrome or Edge native messaging registry key for the current user by default. The host validates SHA-256 hashes, rejects path traversal, and rejects Windows-reserved filenames before writing files.

@@ -2,7 +2,7 @@ import { BookmarkManager } from "./bookmark-manager.js";
 import { OperationGuardManager } from "./operation-guard.js";
 import { QueueProcessor } from "./queue-processor.js";
 import { SyncDispatcher } from "./sync-dispatcher.js";
-import { connectChatGptOAuth, disconnectChatGptOAuth } from "../providers/openai-chatgpt-oauth.js";
+import { disconnectChatGptOAuth, pollChatGptOAuthDeviceAuthorization, startChatGptOAuthDeviceAuthorization, type DeviceAuthorizationSession } from "../providers/openai-chatgpt-oauth.js";
 import { storage, type ProviderConfig } from "./storage.js";
 
 const bookmarkManager = new BookmarkManager();
@@ -94,18 +94,35 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.taxonomy) await storage.saveTaxonomy(message.taxonomy);
       if (message.providerConfig) await storage.saveProviderConfig(message.providerConfig);
       sendResponse({ ok: true });
-    } else if (message?.type === "oauth:connect") {
+    } else if (message?.type === "oauth:start") {
       const config = message.providerConfig as ProviderConfig | undefined;
       if (config?.provider !== "openai-chatgpt-oauth") {
         sendResponse({ ok: false, message: "ChatGPT OAuth provider config is required" });
         return;
       }
       try {
-        const connectedConfig = await connectChatGptOAuth(config);
-        await storage.saveProviderConfig(connectedConfig);
-        sendResponse({ ok: true, expires_at: connectedConfig.expires_at });
+        const session = await startChatGptOAuthDeviceAuthorization();
+        sendResponse({ ok: true, session });
       } catch (error) {
-        sendResponse({ ok: false, message: error instanceof Error ? error.message : "Unable to connect ChatGPT OAuth" });
+        sendResponse({ ok: false, message: error instanceof Error ? error.message : "Unable to start ChatGPT OAuth" });
+      }
+    } else if (message?.type === "oauth:poll") {
+      const config = message.providerConfig as ProviderConfig | undefined;
+      const session = message.session as DeviceAuthorizationSession | undefined;
+      if (config?.provider !== "openai-chatgpt-oauth" || !session) {
+        sendResponse({ ok: false, message: "ChatGPT OAuth provider config and device session are required" });
+        return;
+      }
+      try {
+        const result = await pollChatGptOAuthDeviceAuthorization(config, session);
+        if (result.status === "connected") {
+          await storage.saveProviderConfig(result.config);
+          sendResponse({ ok: true, status: "connected", expires_at: result.config.expires_at });
+        } else {
+          sendResponse({ ok: true, status: "pending" });
+        }
+      } catch (error) {
+        sendResponse({ ok: false, message: error instanceof Error ? error.message : "Unable to poll ChatGPT OAuth" });
       }
     } else if (message?.type === "oauth:disconnect") {
       const config = await storage.getProviderConfig();

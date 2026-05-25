@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { OpenAIChatGptOAuthProvider, OPENAI_CHATGPT_OAUTH_AUTHORIZE_URL, OPENAI_CHATGPT_OAUTH_CLIENT_ID, OPENAI_CHATGPT_OAUTH_SCOPES, buildAuthorizationUrl, disconnectChatGptOAuth, parseAuthorizationCode, validateOAuthConnectConfig } from "../../dist/src/providers/openai-chatgpt-oauth.js";
+import {
+  OpenAIChatGptOAuthProvider,
+  OPENAI_CHATGPT_DEVICE_APPROVAL_URL,
+  OPENAI_CHATGPT_DEVICE_CALLBACK_URL,
+  OPENAI_CHATGPT_DEVICE_TOKEN_URL,
+  OPENAI_CHATGPT_DEVICE_USER_CODE_URL,
+  OPENAI_CHATGPT_OAUTH_CLIENT_ID,
+  OPENAI_CHATGPT_OAUTH_TOKEN_URL,
+  deviceAuthorizationUrl,
+  disconnectChatGptOAuth,
+  pollChatGptOAuthDeviceAuthorization,
+  startChatGptOAuthDeviceAuthorization,
+  validateOAuthConnectConfig
+} from "../../dist/src/providers/openai-chatgpt-oauth.js";
 
 const config = {
   provider: "openai-chatgpt-oauth",
@@ -15,24 +28,11 @@ const config = {
   retry_count: 1
 };
 
-test("ChatGPT OAuth authorization URL uses authorization code with PKCE S256", () => {
-  const url = new URL(buildAuthorizationUrl("https://extension.example/callback", "challenge", "state-123"));
+test("ChatGPT OAuth device authorization URL carries the user code", () => {
+  const url = new URL(deviceAuthorizationUrl("ABCD-EFGH"));
 
-  assert.equal(url.toString().startsWith(OPENAI_CHATGPT_OAUTH_AUTHORIZE_URL), true);
-  assert.equal(url.searchParams.get("response_type"), "code");
-  assert.equal(url.searchParams.get("client_id"), OPENAI_CHATGPT_OAUTH_CLIENT_ID);
-  assert.equal(url.searchParams.get("redirect_uri"), "https://extension.example/callback");
-  assert.equal(url.searchParams.get("scope"), OPENAI_CHATGPT_OAUTH_SCOPES);
-  assert.equal(url.searchParams.get("code_challenge"), "challenge");
-  assert.equal(url.searchParams.get("code_challenge_method"), "S256");
-  assert.equal(url.searchParams.get("state"), "state-123");
-  assert.equal(url.searchParams.get("codex_cli_simplified_flow"), "true");
-});
-
-test("ChatGPT OAuth redirect parser validates state before returning code", () => {
-  assert.equal(parseAuthorizationCode("https://extension.example/callback?code=abc&state=state-123", "state-123"), "abc");
-  assert.throws(() => parseAuthorizationCode("https://extension.example/callback?code=abc&state=wrong", "state-123"), /state mismatch/i);
-  assert.throws(() => parseAuthorizationCode("https://extension.example/callback?error=access_denied&state=state-123", "state-123"), /access_denied/i);
+  assert.equal(url.origin + url.pathname, OPENAI_CHATGPT_DEVICE_APPROVAL_URL);
+  assert.equal(url.searchParams.get("user_code"), "ABCD-EFGH");
 });
 
 test("ChatGPT OAuth config validation only requires provider API base URL and model", () => {
@@ -103,7 +103,47 @@ test("ChatGPT OAuth refresh preserves existing refresh token when endpoint omits
     assert.equal(result.ok, true);
     assert.equal(updatedConfig.refresh_token, "refresh-token");
     assert.equal(calls.length, 2);
+    assert.equal(calls[0].url, OPENAI_CHATGPT_OAUTH_TOKEN_URL);
     assert.equal(calls[1].options.headers.Authorization, "Bearer new-access-token");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ChatGPT OAuth device flow starts, polls, and exchanges approved code", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    if (url === OPENAI_CHATGPT_DEVICE_USER_CODE_URL) {
+      return new Response(JSON.stringify({ device_auth_id: "device-1", user_code: "ABCD-EFGH", interval: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url === OPENAI_CHATGPT_DEVICE_TOKEN_URL) {
+      return new Response(JSON.stringify({ authorization_code: "auth-code", code_verifier: "verifier" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url === OPENAI_CHATGPT_OAUTH_TOKEN_URL) {
+      const body = options.body;
+      assert.equal(body.get("grant_type"), "authorization_code");
+      assert.equal(body.get("code"), "auth-code");
+      assert.equal(body.get("redirect_uri"), OPENAI_CHATGPT_DEVICE_CALLBACK_URL);
+      assert.equal(body.get("client_id"), OPENAI_CHATGPT_OAUTH_CLIENT_ID);
+      assert.equal(body.get("code_verifier"), "verifier");
+      return new Response(JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_in: 3600 }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  };
+
+  try {
+    const session = await startChatGptOAuthDeviceAuthorization();
+    const pollResult = await pollChatGptOAuthDeviceAuthorization({ ...config, access_token: undefined, refresh_token: undefined, expires_at: undefined }, session);
+
+    assert.equal(session.device_auth_id, "device-1");
+    assert.equal(session.user_code, "ABCD-EFGH");
+    assert.equal(new URL(session.verification_url).searchParams.get("user_code"), "ABCD-EFGH");
+    assert.equal(pollResult.status, "connected");
+    assert.equal(pollResult.config.access_token, "access");
+    assert.equal(pollResult.config.refresh_token, "refresh");
+    assert.equal(calls.length, 3);
   } finally {
     globalThis.fetch = originalFetch;
   }

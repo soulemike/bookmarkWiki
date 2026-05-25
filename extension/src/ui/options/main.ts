@@ -1,13 +1,14 @@
 import type { ProviderConfig, UserSettings } from "../../background/storage.js";
 import type { BookmarkTaxonomy } from "../../models/taxonomy.js";
-import { OPENAI_CHATGPT_OAUTH_AUTHORIZE_URL, OPENAI_CHATGPT_OAUTH_CLIENT_ID, validateOAuthConnectConfig } from "../../providers/openai-chatgpt-oauth.js";
+import { OPENAI_CHATGPT_DEVICE_CALLBACK_URL, OPENAI_CHATGPT_OAUTH_CLIENT_ID, type DeviceAuthorizationSession, validateOAuthConnectConfig } from "../../providers/openai-chatgpt-oauth.js";
 import { providerOriginPattern, validateProviderBaseUrl } from "../../providers/openai-compatible.js";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
 type SettingsResponse = { settings: UserSettings; taxonomy: BookmarkTaxonomy; providerConfig?: ProviderConfig };
 type HostPermissionRequest = { origins: string[] };
-type OAuthConnectResponse = { ok: true; expires_at?: string } | { ok: false; message: string };
+type OAuthStartResponse = { ok: true; session: DeviceAuthorizationSession } | { ok: false; message: string };
+type OAuthPollResponse = { ok: true; status: "pending" } | { ok: true; status: "connected"; expires_at?: string } | { ok: false; message: string };
 type ChromePermissionsApi = {
   request(permissions: HostPermissionRequest): Promise<boolean>;
 };
@@ -31,10 +32,15 @@ async function load(): Promise<void> {
       <label><input name="allowPageTextExtraction" type="checkbox" ${settings.allowPageTextExtraction ? "checked" : ""}> Allow page text extraction</label>
       <section class="provider-note" aria-label="Native host sync settings">
         <strong>Windows-first native host sync</strong>
-        <p>Enable only after installing the local native host and registering <code>com.bookmark_queue_agent.host</code>. The target path should be a local Windows folder such as <code>C:\Users\you\Documents\BookmarkWiki</code>.</p>
-        <label><input name="enableNativeHostSync" type="checkbox" ${settings.enableNativeHostSync ? "checked" : ""}> Write moved bookmarks to the local native host</label>
-        <label>Native host target path <input name="nativeHostTargetPath" value="${escapeAttribute(settings.nativeHostTargetPath)}" placeholder="C:\Users\you\Documents\BookmarkWiki"></label>
-        <button id="test-native-host" type="button">Test native host</button>
+        <p>Set this up once to let the extension write approved bookmarks to a local folder on your PC.</p>
+        <ol class="setup-steps">
+          <li>Copy this extension's ID from <code>chrome://extensions</code>.</li>
+          <li>Open PowerShell in the repo's <code>native-host</code> folder and run <code>.\\install-windows.ps1 -Browser Chrome -ExtensionId &lt;extension-id&gt;</code>.</li>
+          <li>Click <strong>Test connection</strong>. If it succeeds, choose a folder and turn on local file sync.</li>
+        </ol>
+        <label><input name="enableNativeHostSync" type="checkbox" ${settings.enableNativeHostSync ? "checked" : ""}> Enable local file sync for approved bookmarks</label>
+        <label>Folder to write files to <input name="nativeHostTargetPath" value="${escapeAttribute(settings.nativeHostTargetPath)}" placeholder="C:\\Users\\you\\Documents\\BookmarkWiki"></label>
+        <button id="test-native-host" type="button">Test connection</button>
       </section>
       <label>Provider
         <select name="provider">
@@ -45,7 +51,7 @@ async function load(): Promise<void> {
       </label>
       <section class="provider-note" aria-label="Provider authentication note">
         <strong>Supported OpenAI-compatible authentication</strong>
-        <p>Use an OpenAI Platform API project key, a token for a local OpenAI-compatible bridge, or a real ChatGPT OAuth client that supports Authorization Code with PKCE. ChatGPT/Codex browser cookies, copied session tokens, and account web sessions are not used as credentials.</p>
+        <p>Use an OpenAI Platform API project key, a token for a local OpenAI-compatible bridge, or OpenAI ChatGPT OAuth via device authorization. ChatGPT/Codex browser cookies, copied session tokens, and account web sessions are not used as credentials.</p>
         <p>Local bridges must expose an OpenAI-compatible <code>/chat/completions</code> endpoint. Plain HTTP is allowed only for localhost or 127.0.0.1.</p>
       </section>
       <label>Base URL <input name="base_url" value="${escapeAttribute(savedProviderConfig?.base_url ?? "https://api.openai.com/v1")}"></label>
@@ -53,7 +59,8 @@ async function load(): Promise<void> {
       <label>API project key or compatible bearer token <input name="api_key" type="password" placeholder="Stored in chrome.storage.local only; leave blank to keep saved key"></label>
       <section class="provider-note" aria-label="ChatGPT OAuth settings">
         <strong>ChatGPT OAuth settings</strong>
-        <p>This provider uses the same public OpenAI OAuth app metadata as Codex/OpenCode-style integrations: <code>${OPENAI_CHATGPT_OAUTH_AUTHORIZE_URL}</code> with client <code>${OPENAI_CHATGPT_OAUTH_CLIENT_ID}</code>. No client ID or endpoint setup is required.</p>
+        <p>This provider uses OpenAI's device authorization flow with public client <code>${OPENAI_CHATGPT_OAUTH_CLIENT_ID}</code>. Click connect, approve the shown code in the opened OpenAI tab, then return here after the connection completes. No client ID, redirect URI, or endpoint setup is required.</p>
+        <p class="hint">Token exchange uses <code>${OPENAI_CHATGPT_DEVICE_CALLBACK_URL}</code> internally, avoiding Chrome extension redirect URI allowlisting.</p>
         <p class="hint">${chatGptOAuthConfig?.access_token ? `OAuth connected${chatGptOAuthConfig.expires_at ? ` until ${chatGptOAuthConfig.expires_at}` : ""}.` : "OAuth is not connected yet."}</p>
       </section>
       <label>Excluded domains <input name="excludedDomains" value="${escapeAttribute(settings.excludedDomains.join(", "))}"></label>
@@ -96,12 +103,7 @@ async function load(): Promise<void> {
         showStatus("Select OpenAI ChatGPT OAuth before connecting.", "error");
         return;
       }
-      const response = await send<OAuthConnectResponse>({ type: "oauth:connect", providerConfig });
-      if (!response.ok) {
-        showStatus(response.message, "error");
-        return;
-      }
-      showStatus(`OAuth connected${response.expires_at ? ` until ${response.expires_at}` : ""}.`, "saved");
+      await connectChatGptOAuth(providerConfig);
       return;
     }
     if (submitter === "disconnect-oauth") {
@@ -116,6 +118,30 @@ async function load(): Promise<void> {
     const result = await send<{ ok: boolean; message: string }>({ type: "native-host:status" });
     showStatus(result.message, result.ok ? "saved" : "error");
   });
+}
+
+async function connectChatGptOAuth(providerConfig: Extract<ProviderConfig, { provider: "openai-chatgpt-oauth" }>): Promise<void> {
+  const started = await send<OAuthStartResponse>({ type: "oauth:start", providerConfig });
+  if (!started.ok) {
+    showStatus(started.message, "error");
+    return;
+  }
+  window.open(started.session.verification_url, "_blank", "noopener");
+  showStatus(`Approve code ${started.session.user_code} in the opened OpenAI tab. Waiting for approval...`, "saved");
+  const deadline = Date.now() + 15 * 60_000;
+  while (Date.now() < deadline) {
+    const response = await send<OAuthPollResponse>({ type: "oauth:poll", providerConfig, session: started.session });
+    if (!response.ok) {
+      showStatus(response.message, "error");
+      return;
+    }
+    if (response.status === "connected") {
+      showStatus(`OAuth connected${response.expires_at ? ` until ${response.expires_at}` : ""}.`, "saved");
+      return;
+    }
+    await sleep(started.session.interval_ms);
+  }
+  showStatus("OpenAI device authorization timed out before approval completed.", "error");
 }
 
 void load();
@@ -190,4 +216,8 @@ function clearStatus(): void {
 
 function escapeAttribute(value: string): string {
   return value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
