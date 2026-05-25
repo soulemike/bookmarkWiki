@@ -1,17 +1,20 @@
-import type { ProviderConfig } from "../background/storage.js";
+import type { OpenAICompatibleProviderConfig, ProviderConfig } from "../background/storage.js";
 import type { ClassificationInput, ClassificationResult, SummaryInput, SummaryResult } from "../models/classification.js";
 import { validateClassificationResult } from "../models/classification.js";
 import type { AIProvider, ProviderResult } from "./types.js";
 
 export class OpenAICompatibleProvider implements AIProvider {
   id = "openai-compatible";
-  name = "OpenAI-Compatible API";
+  name = "OpenAI-compatible API or local bridge";
 
-  constructor(private config: ProviderConfig) {}
+  constructor(private config: OpenAICompatibleProviderConfig) {}
 
   async validateConfig(config: ProviderConfig): Promise<ProviderResult<{ model: string }>> {
+    if (config.provider !== "openai-compatible") return { ok: false, code: "invalid_config", message: "OpenAI-compatible provider config is required", retryable: false };
     if (!config.api_key) return { ok: false, code: "invalid_config", message: "API key is required", retryable: false };
     if (!config.base_url || !config.model) return { ok: false, code: "invalid_config", message: "Base URL and model are required", retryable: false };
+    const baseUrlError = validateProviderBaseUrl(config.base_url);
+    if (baseUrlError) return { ok: false, code: "invalid_config", message: baseUrlError, retryable: false };
     return { ok: true, value: { model: config.model } };
   }
 
@@ -61,6 +64,27 @@ export function authorizationHeader(token: string | undefined): string {
   return `Bearer ${normalized}`;
 }
 
+export function validateProviderBaseUrl(baseUrl: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return "Base URL must be a valid URL";
+  }
+
+  if (url.protocol === "https:") return undefined;
+  if (url.protocol === "http:" && isLoopbackHostname(url.hostname)) return undefined;
+  if (url.protocol === "http:") return "Plain HTTP provider URLs are only allowed for localhost or 127.0.0.1 local bridges";
+  return "Provider Base URL must use https://, or http:// for a localhost/127.0.0.1 local bridge";
+}
+
+export function providerOriginPattern(baseUrl: string): string | undefined {
+  const baseUrlError = validateProviderBaseUrl(baseUrl);
+  if (baseUrlError) return undefined;
+  const url = new URL(baseUrl);
+  return `${url.origin}/*`;
+}
+
 export async function readProviderError(response: Response): Promise<string | undefined> {
   const text = await response.text().catch(() => "");
   if (!text.trim()) return undefined;
@@ -93,4 +117,8 @@ function isRetryableRateLimit(providerMessage: string | undefined): boolean {
   if (!providerMessage) return true;
   const normalized = providerMessage.toLowerCase();
   return !["insufficient_quota", "billing", "quota exceeded", "quota_exceeded", "payment", "credits"].some((marker) => normalized.includes(marker));
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
 }

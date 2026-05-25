@@ -23,6 +23,11 @@ declare namespace chrome {
     const onStartup: ChromeEvent<() => void>;
     const onMessage: ChromeEvent<(message: any, sender: unknown, sendResponse: (response?: unknown) => void) => boolean | void>;
     function sendMessage<T = unknown>(message: unknown): Promise<T>;
+    function sendNativeMessage<T = unknown>(application: string, message: unknown): Promise<T>;
+  }
+  namespace identity {
+    function getRedirectURL(path?: string): string;
+    function launchWebAuthFlow(details: { url: string; interactive?: boolean }): Promise<string | undefined>;
   }
   namespace action { const onClicked: ChromeEvent<(tab: tabs.Tab) => void>; }
   namespace contextMenus {

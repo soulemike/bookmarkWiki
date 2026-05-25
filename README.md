@@ -30,9 +30,10 @@ review, approve/move, audit, and rollback.
 
 ## Current boundaries
 
-- This is an MVP 1 implementation, not the MVP 3 filesystem knowledge-base exporter or MVP 4 native host automation.
-- The default provider is local deterministic rules; remote AI only runs after the user configures an OpenAI-compatible provider.
-- OpenAI-compatible API access uses a user-supplied API project key or compatible bearer token; ChatGPT subscriptions/OIDC sign-in are not API credentials for this extension.
+- This is primarily an MVP 1 implementation with a Windows-first native-host write foundation; it is not yet the full MVP 3 filesystem knowledge-base exporter or MVP 4 Git/local-model automation.
+- The default provider is local deterministic rules; remote AI only runs after the user configures an OpenAI-compatible API, local bridge provider, or OpenAI ChatGPT OAuth provider.
+- OpenAI-compatible API access uses a user-supplied API project key, local-bridge token, or a real OAuth Authorization Code + PKCE client; ChatGPT subscriptions, Codex login, copied session tokens, and browser web sessions are not API credentials for this extension.
+- Provider URLs must use HTTPS, except loopback HTTP is allowed for local OpenAI-compatible bridges such as `localhost` or `127.0.0.1`.
 - API keys and bearer tokens are stored through `chrome.storage.local` only and are not written to sync storage, docs, fixtures, exports, or tests.
 - Real-browser extension E2E execution is documented as a release gate; automated coverage currently uses unit/integration tests with mocked Chrome APIs.
 

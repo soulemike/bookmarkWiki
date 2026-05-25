@@ -1,1 +1,40 @@
-{ "$schema": "https://json-schema.org/draft/2020-12/schema", "title": "ProviderConfig", "type": "object", "required": ["provider", "base_url", "model", "temperature", "max_tokens", "timeout_seconds", "retry_count"], "properties": { "provider": { "enum": ["openai-compatible"] }, "base_url": { "type": "string" }, "model": { "type": "string" }, "api_key": { "type": "string" }, "temperature": { "type": "number" }, "max_tokens": { "type": "integer" }, "timeout_seconds": { "type": "integer" }, "retry_count": { "type": "integer" } } }
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProviderConfig",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["provider", "base_url", "model", "temperature", "max_tokens", "timeout_seconds", "retry_count"],
+      "properties": {
+        "provider": { "const": "openai-compatible" },
+        "base_url": { "type": "string", "description": "OpenAI-compatible API or bridge base URL. Runtime validation allows https://, or http:// only for localhost/127.0.0.1 loopback bridges." },
+        "model": { "type": "string" },
+        "api_key": { "type": "string" },
+        "temperature": { "type": "number" },
+        "max_tokens": { "type": "integer" },
+        "timeout_seconds": { "type": "integer" },
+        "retry_count": { "type": "integer" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["provider", "base_url", "model", "client_id", "authorization_url", "token_url", "scopes", "temperature", "max_tokens", "timeout_seconds", "retry_count"],
+      "properties": {
+        "provider": { "const": "openai-chatgpt-oauth" },
+        "base_url": { "type": "string", "description": "OpenAI API base URL used after OAuth token acquisition." },
+        "model": { "type": "string" },
+        "client_id": { "type": "string" },
+        "authorization_url": { "type": "string" },
+        "token_url": { "type": "string" },
+        "scopes": { "type": "string" },
+        "access_token": { "type": "string" },
+        "refresh_token": { "type": "string" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "temperature": { "type": "number" },
+        "max_tokens": { "type": "integer" },
+        "timeout_seconds": { "type": "integer" },
+        "retry_count": { "type": "integer" }
+      }
+    }
+  ]
+}

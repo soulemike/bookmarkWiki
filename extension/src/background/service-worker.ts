@@ -1,11 +1,14 @@
 import { BookmarkManager } from "./bookmark-manager.js";
 import { OperationGuardManager } from "./operation-guard.js";
 import { QueueProcessor } from "./queue-processor.js";
-import { storage } from "./storage.js";
+import { SyncDispatcher } from "./sync-dispatcher.js";
+import { connectChatGptOAuth, disconnectChatGptOAuth } from "../providers/openai-chatgpt-oauth.js";
+import { storage, type ProviderConfig } from "./storage.js";
 
 const bookmarkManager = new BookmarkManager();
 const guards = new OperationGuardManager();
 const processor = new QueueProcessor(undefined, undefined, guards);
+const syncDispatcher = new SyncDispatcher();
 
 chrome.runtime.onInstalled.addListener(async () => {
   await guards.hydrate();
@@ -80,6 +83,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "queue:list") sendResponse({ queue: await storage.getQueue(), audit: await storage.getAuditLog() });
     else if (message?.type === "queue:process-next") sendResponse({ item: await processor.processNext({ retryTransientFailures: false }) });
     else if (message?.type === "queue:approve") sendResponse({ item: await processor.approve(message.id, message.edits) });
+    else if (message?.type === "queue:sync-native") sendResponse({ item: await processor.syncMovedItem(message.id) });
     else if (message?.type === "queue:mark") sendResponse({ item: await processor.mark(message.id, message.status) });
     else if (message?.type === "queue:rollback-last") {
       await processor.rollbackLastBatch();
@@ -90,6 +94,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.taxonomy) await storage.saveTaxonomy(message.taxonomy);
       if (message.providerConfig) await storage.saveProviderConfig(message.providerConfig);
       sendResponse({ ok: true });
+    } else if (message?.type === "oauth:connect") {
+      const config = message.providerConfig as ProviderConfig | undefined;
+      if (config?.provider !== "openai-chatgpt-oauth") {
+        sendResponse({ ok: false, message: "ChatGPT OAuth provider config is required" });
+        return;
+      }
+      try {
+        const connectedConfig = await connectChatGptOAuth(config);
+        await storage.saveProviderConfig(connectedConfig);
+        sendResponse({ ok: true, expires_at: connectedConfig.expires_at });
+      } catch (error) {
+        sendResponse({ ok: false, message: error instanceof Error ? error.message : "Unable to connect ChatGPT OAuth" });
+      }
+    } else if (message?.type === "oauth:disconnect") {
+      const config = await storage.getProviderConfig();
+      if (config?.provider === "openai-chatgpt-oauth") await storage.saveProviderConfig(disconnectChatGptOAuth(config));
+      sendResponse({ ok: true });
+    } else if (message?.type === "native-host:status") {
+      sendResponse(await syncDispatcher.status());
     }
   })();
   return true;

@@ -5,6 +5,7 @@ import { FolderResolver } from "./folder-resolver.js";
 import { OperationGuardManager } from "./operation-guard.js";
 import { storage } from "./storage.js";
 import { ClassificationOrchestrator } from "./classifier.js";
+import { SyncDispatcher } from "./sync-dispatcher.js";
 
 const LOCK_MS = 2 * 60 * 1000;
 
@@ -16,7 +17,8 @@ export class QueueProcessor {
   constructor(
     private classifier = new ClassificationOrchestrator(),
     private folderResolver = new FolderResolver(),
-    private guards = new OperationGuardManager()
+    private guards = new OperationGuardManager(),
+    private syncDispatcher = new SyncDispatcher()
   ) {}
 
   async processNext(options: ProcessNextOptions = {}): Promise<BookmarkQueueItem | undefined> {
@@ -96,6 +98,20 @@ export class QueueProcessor {
     item.status = "moved";
     item.processedAt = new Date().toISOString();
     await storage.upsertQueueItem(item);
+    await this.syncMovedItem(item.id);
+    return item;
+  }
+
+  async syncMovedItem(id: string): Promise<BookmarkQueueItem | undefined> {
+    const queue = await storage.getQueue();
+    const item = queue.find((candidate) => candidate.id === id);
+    if (!item) return undefined;
+    const syncResult = await this.syncDispatcher.dispatchIfEnabled(item);
+    item.nativeSyncStatus = syncResult.status;
+    item.nativeSyncError = syncResult.ok ? undefined : syncResult.message;
+    item.nativeSyncedAt = syncResult.status === "synced" ? new Date().toISOString() : item.nativeSyncedAt;
+    await storage.upsertQueueItem(item);
+    await storage.appendAudit({ operationId: crypto.randomUUID(), timestamp: new Date().toISOString(), action: "export_kb", chromeBookmarkId: item.chromeBookmarkId, url: item.url, errorCode: syncResult.ok ? undefined : "native_host_sync_failed", message: syncResult.message });
     return item;
   }
 

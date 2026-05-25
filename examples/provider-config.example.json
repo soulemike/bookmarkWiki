@@ -1,10 +1,27 @@
 {
-  "provider": "openai-compatible",
-  "base_url": "https://api.openai.com/v1",
-  "model": "gpt-5.5",
-  "api_key_storage": "chrome.storage.local",
-  "temperature": 0.1,
-  "max_tokens": 1200,
-  "timeout_seconds": 30,
-  "retry_count": 1
+  "openai_compatible": {
+    "provider": "openai-compatible",
+    "base_url": "https://api.openai.com/v1",
+    "base_url_note": "Use https:// for remote providers; http:// is allowed only for localhost/127.0.0.1 OpenAI-compatible local bridges.",
+    "model": "gpt-5.5",
+    "api_key_storage": "chrome.storage.local",
+    "temperature": 0.1,
+    "max_tokens": 1200,
+    "timeout_seconds": 30,
+    "retry_count": 1
+  },
+  "openai_chatgpt_oauth": {
+    "provider": "openai-chatgpt-oauth",
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-5.5",
+    "client_id": "registered-oauth-client-id",
+    "authorization_url": "https://your-oauth-provider.example/authorize",
+    "token_url": "https://your-oauth-provider.example/token",
+    "scopes": "openid profile email",
+    "token_storage": "chrome.storage.local",
+    "temperature": 0.1,
+    "max_tokens": 1200,
+    "timeout_seconds": 30,
+    "retry_count": 1
+  }
 }

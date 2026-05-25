@@ -1,6 +1,7 @@
 import type { BookmarkQueueItem } from "../models/bookmark.js";
 import type { ClassificationInput, ClassificationResult } from "../models/classification.js";
 import { validateClassificationResult } from "../models/classification.js";
+import { OpenAIChatGptOAuthProvider } from "../providers/openai-chatgpt-oauth.js";
 import { OpenAICompatibleProvider } from "../providers/openai-compatible.js";
 import { RuleBasedProvider } from "../providers/rule-based.js";
 import type { AIProvider, ProviderResult } from "../providers/types.js";
@@ -16,9 +17,7 @@ export class ClassificationOrchestrator {
     if (settings.excludedDomains.includes(domainFromUrl(item.url))) {
       return { ok: false, code: "invalid_config", message: "Domain is excluded from classification", retryable: false };
     }
-    const provider: AIProvider = settings.provider === "openai-compatible" && providerConfig
-      ? new OpenAICompatibleProvider(providerConfig)
-      : new RuleBasedProvider(taxonomy);
+    const provider: AIProvider = selectProvider(settings.provider, providerConfig, taxonomy);
     const input: ClassificationInput = {
       url: item.url,
       title: item.originalTitle,
@@ -42,4 +41,12 @@ export class ClassificationOrchestrator {
     }
     return { ok: true, value: undefined };
   }
+}
+
+function selectProvider(providerId: UserSettings["provider"], providerConfig: Awaited<ReturnType<typeof storage.getProviderConfig>>, taxonomy: Awaited<ReturnType<typeof storage.getTaxonomy>>): AIProvider {
+  if (providerId === "openai-compatible" && providerConfig?.provider === "openai-compatible") return new OpenAICompatibleProvider(providerConfig);
+  if (providerId === "openai-chatgpt-oauth" && providerConfig?.provider === "openai-chatgpt-oauth") {
+    return new OpenAIChatGptOAuthProvider(providerConfig, (updatedConfig) => storage.saveProviderConfig(updatedConfig));
+  }
+  return new RuleBasedProvider(taxonomy);
 }

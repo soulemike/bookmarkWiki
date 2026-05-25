@@ -13,13 +13,14 @@ This document is intended to make the MVP deliverables explicit when reviewing C
 - **Strict folder validation:** Folder resolution maps absolute taxonomy paths such as `/Bookmarks Bar/Work` to Chrome bookmark folder IDs and blocks missing or ambiguous folders in strict mode.
 - **Review-first workflow:** The side panel exposes classify, approve, ignore, archive, reclassify, and rollback actions. Auto-move remains disabled by default.
 - **Rollback-safe bookmark mutation:** Approval writes separate audit entries for title update and folder move, allowing reverse-order rollback of the latest approved batch.
+- **Windows-first native host foundation:** The extension can check `com.bookmark_queue_agent.host` status and, when explicitly enabled, send moved-bookmark Markdown/JSON files to the local native host for hashed, Windows-safe writes.
 
 ## Not included yet
 
 - Full taxonomy editor UI.
 - Bulk import from existing Chrome folders.
-- Filesystem knowledge-base export and Markdown/JSON generation.
-- Native host continuous sync, Git commit automation, SQLite, or vector-ready exports.
+- Full MVP 3 filesystem export UI and complete Markdown/JSON index generation.
+- Git commit automation, SQLite, vector-ready exports, packaged native-host installer, or macOS/Linux registration automation.
 - Live-provider contract tests against real cloud services.
 - Automated real-browser E2E execution in CI.
 

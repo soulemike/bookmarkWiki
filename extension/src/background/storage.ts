@@ -4,13 +4,15 @@ import { DEFAULT_TAXONOMY, type BookmarkTaxonomy } from "../models/taxonomy.js";
 
 export interface UserSettings {
   routeNormalBookmarks: boolean;
-  provider: "rule-based" | "openai-compatible";
+  provider: "rule-based" | "openai-compatible" | "openai-chatgpt-oauth";
   strictMode: boolean;
   enableAutoMove: boolean;
   reviewThreshold: number;
   autoMoveThreshold: number;
   excludedDomains: string[];
   allowPageTextExtraction: boolean;
+  enableNativeHostSync: boolean;
+  nativeHostTargetPath: string;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -21,10 +23,12 @@ export const DEFAULT_SETTINGS: UserSettings = {
   reviewThreshold: 0.7,
   autoMoveThreshold: 0.9,
   excludedDomains: [],
-  allowPageTextExtraction: false
+  allowPageTextExtraction: false,
+  enableNativeHostSync: false,
+  nativeHostTargetPath: ""
 };
 
-export interface ProviderConfig {
+export interface OpenAICompatibleProviderConfig {
   provider: "openai-compatible";
   base_url: string;
   model: string;
@@ -34,6 +38,25 @@ export interface ProviderConfig {
   timeout_seconds: number;
   retry_count: number;
 }
+
+export interface OpenAIChatGptOAuthProviderConfig {
+  provider: "openai-chatgpt-oauth";
+  base_url: string;
+  model: string;
+  client_id: string;
+  authorization_url: string;
+  token_url: string;
+  scopes: string;
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: string;
+  temperature: number;
+  max_tokens: number;
+  timeout_seconds: number;
+  retry_count: number;
+}
+
+export type ProviderConfig = OpenAICompatibleProviderConfig | OpenAIChatGptOAuthProviderConfig;
 
 const keys = {
   queue: "queueItems",

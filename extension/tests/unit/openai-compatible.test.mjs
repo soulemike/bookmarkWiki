@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { authorizationHeader, normalizeHttpFailure, readProviderError } from "../../dist/src/providers/openai-compatible.js";
+import { authorizationHeader, normalizeHttpFailure, providerOriginPattern, readProviderError, validateProviderBaseUrl } from "../../dist/src/providers/openai-compatible.js";
 
 test("OpenAI-compatible 429 insufficient_quota is surfaced as non-retryable quota detail", async () => {
   const response = new Response(JSON.stringify({
@@ -53,4 +53,18 @@ test("OpenAI-compatible auth failures include provider details", () => {
 test("OpenAI-compatible authorization header accepts pasted Bearer tokens", () => {
   assert.equal(authorizationHeader("Bearer eyJhbGciOi..."), "Bearer eyJhbGciOi...");
   assert.equal(authorizationHeader("  sk-proj-example  "), "Bearer sk-proj-example");
+});
+
+test("OpenAI-compatible base URL validation allows https and loopback local bridges", () => {
+  assert.equal(validateProviderBaseUrl("https://api.openai.com/v1"), undefined);
+  assert.equal(validateProviderBaseUrl("http://localhost:11434/v1"), undefined);
+  assert.equal(validateProviderBaseUrl("http://127.0.0.1:1234/v1"), undefined);
+  assert.equal(providerOriginPattern("http://127.0.0.1:1234/v1"), "http://127.0.0.1:1234/*");
+});
+
+test("OpenAI-compatible base URL validation rejects unsafe provider URLs", () => {
+  assert.match(validateProviderBaseUrl("http://example.com/v1") ?? "", /Plain HTTP/);
+  assert.match(validateProviderBaseUrl("file:///tmp/provider") ?? "", /https/);
+  assert.match(validateProviderBaseUrl("not a url") ?? "", /valid URL/);
+  assert.equal(providerOriginPattern("http://example.com/v1"), undefined);
 });

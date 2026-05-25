@@ -1,1 +1,42 @@
-{ "$schema": "https://json-schema.org/draft/2020-12/schema", "title": "NativeHostMessage", "oneOf": [ { "type": "object", "required": ["requestId", "action"], "properties": { "requestId": { "type": "string" }, "action": { "enum": ["write_kb", "git_commit", "status"] } } }, { "type": "object", "required": ["requestId", "ok"], "properties": { "requestId": { "type": "string" }, "ok": { "type": "boolean" } } } ] }
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NativeHostMessage",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["requestId", "action"],
+      "additionalProperties": false,
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1 },
+        "action": { "enum": ["write_kb", "git_commit", "status"] },
+        "targetPath": { "type": "string", "minLength": 1 },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["relativePath", "content", "sha256"],
+            "additionalProperties": false,
+            "properties": {
+              "relativePath": { "type": "string", "minLength": 1 },
+              "content": { "type": "string" },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["requestId", "ok"],
+      "additionalProperties": false,
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1 },
+        "ok": { "type": "boolean" },
+        "writtenFiles": { "type": "array", "items": { "type": "string" } },
+        "commitHash": { "type": "string" },
+        "errorCode": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  ]
+}

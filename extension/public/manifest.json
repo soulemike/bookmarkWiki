@@ -3,7 +3,7 @@
   "name": "Bookmark Queue Agent",
   "description": "Inbound bookmark queue with rule-based or BYO AI classification and rollback-safe review.",
   "version": "0.1.0",
-  "permissions": ["bookmarks", "storage", "contextMenus", "activeTab", "scripting", "sidePanel", "alarms"],
+  "permissions": ["bookmarks", "storage", "contextMenus", "activeTab", "scripting", "sidePanel", "alarms", "nativeMessaging", "identity"],
   "host_permissions": ["https://api.openai.com/*"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
   "background": { "service_worker": "src/background/service-worker.js", "type": "module" },

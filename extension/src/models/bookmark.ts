@@ -1,5 +1,6 @@
 export type BookmarkQueueSource = "current_tab" | "context_menu" | "bookmark_event" | "bulk_import";
 export type BookmarkQueueStatus = "queued" | "classified" | "needs_review" | "approved" | "moved" | "ignored" | "archived" | "error";
+export type NativeSyncStatus = "disabled" | "synced" | "failed";
 
 export interface BookmarkQueueItem {
   id: string;
@@ -26,6 +27,9 @@ export interface BookmarkQueueItem {
   lastAttemptAt?: string;
   lockedUntil?: string;
   lastErrorCode?: string;
+  nativeSyncStatus?: NativeSyncStatus;
+  nativeSyncError?: string;
+  nativeSyncedAt?: string;
   operationId?: string;
   error?: string;
 }

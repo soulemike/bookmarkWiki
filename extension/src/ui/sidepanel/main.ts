@@ -23,6 +23,7 @@ async function load(): Promise<void> {
       const id = button.dataset.id!;
       const action = button.dataset.action!;
       if (action === "approve") await send({ type: "queue:approve", id });
+      else if (action === "sync-native") await send({ type: "queue:sync-native", id });
       else await send({ type: "queue:mark", id, status: action });
       await load();
     });
@@ -38,15 +39,24 @@ function renderItem(item: BookmarkQueueItem): string {
         <dt>Status</dt><dd>${item.status}</dd>
         <dt>Folder</dt><dd>${escapeHtml(item.proposedFolder ?? "—")}</dd>
         <dt>Confidence</dt><dd>${item.confidence?.toFixed(2) ?? "—"}</dd>
+        <dt>Native sync</dt><dd>${escapeHtml(nativeSyncLabel(item))}</dd>
         <dt>Reason</dt><dd>${escapeHtml(item.reason ?? item.error ?? "—")}</dd>
       </dl>
       <div class="actions">
         <button data-action="approve" data-id="${item.id}">Approve</button>
+        ${item.status === "moved" && item.nativeSyncStatus === "failed" ? `<button data-action="sync-native" data-id="${item.id}">Retry native sync</button>` : ""}
         <button data-action="ignored" data-id="${item.id}">Ignore</button>
         <button data-action="archived" data-id="${item.id}">Archive</button>
         <button data-action="queued" data-id="${item.id}">Reclassify</button>
       </div>
     </article>`;
+}
+
+function nativeSyncLabel(item: BookmarkQueueItem): string {
+  if (!item.nativeSyncStatus) return "—";
+  if (item.nativeSyncStatus === "failed") return `failed: ${item.nativeSyncError ?? "unknown error"}`;
+  if (item.nativeSyncStatus === "synced") return item.nativeSyncedAt ? `synced at ${item.nativeSyncedAt}` : "synced";
+  return "disabled";
 }
 
 function escapeHtml(value: string): string {
