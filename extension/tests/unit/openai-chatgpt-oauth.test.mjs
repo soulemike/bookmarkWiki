@@ -119,6 +119,38 @@ test("ChatGPT OAuth Codex SSE parser does not duplicate final assistant item tex
   assert.deepEqual(JSON.parse(parsed.content), classificationJson());
 });
 
+test("ChatGPT OAuth classification accepts duplicated JSON text from Codex output", async () => {
+  const originalFetch = globalThis.fetch;
+  const json = JSON.stringify(classificationJson());
+  globalThis.fetch = async () => new Response(codexSse(`${json}${json}`), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+
+  try {
+    const provider = new OpenAIChatGptOAuthProvider(config);
+    const result = await provider.classifyBookmark({ url: "https://example.com", title: "Example", taxonomyFolders: ["/Bookmarks Bar/Work"] });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.value.reason, "Matched test taxonomy.");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ChatGPT OAuth classification extracts JSON from fenced provider text", async () => {
+  const originalFetch = globalThis.fetch;
+  const json = JSON.stringify(classificationJson());
+  globalThis.fetch = async () => new Response(codexSse(`Here is the classification:\n\n\`\`\`json\n${json}\n\`\`\``), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+
+  try {
+    const provider = new OpenAIChatGptOAuthProvider(config);
+    const result = await provider.classifyBookmark({ url: "https://example.com", title: "Example", taxonomyFolders: ["/Bookmarks Bar/Work"] });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.value.descriptive_title, "Example classified");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("ChatGPT OAuth Codex request uses responses input message shape", () => {
   const request = codexClassificationRequest(config, { url: "https://example.com", title: "Example", taxonomyFolders: ["/Bookmarks Bar/Work"] });
 

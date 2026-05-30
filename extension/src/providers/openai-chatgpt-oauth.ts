@@ -90,7 +90,8 @@ export class OpenAIChatGptOAuthProvider implements AIProvider {
       const parsedResponse = parseCodexSse(await response.text());
       const content = parsedResponse.content;
       if (!content) return { ok: false, code: "invalid_response", message: "Provider returned no content", retryable: true };
-      const parsed = JSON.parse(content) as unknown;
+      const parsed = parseJsonString(content);
+      if (parsed === undefined) return { ok: false, code: "invalid_response", message: "Provider returned content that was not valid ClassificationResult JSON", retryable: true };
       const validation = findClassificationResult(parsed) ?? validateClassificationResult(parsed);
       if (!validation.ok) return { ok: false, code: "schema_validation_failed", message: validation.errors.join("; "), retryable: false };
       return { ok: true, value: validation.value, rawUsage: { inputTokens: parsedResponse.inputTokens, outputTokens: parsedResponse.outputTokens } };
@@ -284,12 +285,54 @@ function findClassificationResult(value: unknown, depth = 0): ReturnType<typeof 
 
 function parseJsonString(value: string): unknown | undefined {
   const trimmed = value.trim();
-  if (!trimmed || !["{", "["].includes(trimmed[0])) return undefined;
+  if (!trimmed) return undefined;
   try {
     return JSON.parse(trimmed) as unknown;
   } catch {
-    return undefined;
+    const jsonSlice = firstCompleteJsonValue(trimmed);
+    if (!jsonSlice) return undefined;
+    try {
+      return JSON.parse(jsonSlice) as unknown;
+    } catch {
+      return undefined;
+    }
   }
+}
+
+function firstCompleteJsonValue(value: string): string | undefined {
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char !== "{" && char !== "[") continue;
+    const end = jsonValueEnd(value, index);
+    if (end !== undefined) return value.slice(index, end + 1);
+  }
+  return undefined;
+}
+
+function jsonValueEnd(value: string, start: number): number | undefined {
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "{") stack.push("}");
+    else if (char === "[") stack.push("]");
+    else if (char === "}" || char === "]") {
+      if (stack.pop() !== char) return undefined;
+      if (stack.length === 0) return index;
+    }
+  }
+  return undefined;
 }
 
 function codexHeaders(accessToken: string): Record<string, string> {
