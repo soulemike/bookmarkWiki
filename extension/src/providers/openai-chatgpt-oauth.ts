@@ -91,7 +91,7 @@ export class OpenAIChatGptOAuthProvider implements AIProvider {
       const content = parsedResponse.content;
       if (!content) return { ok: false, code: "invalid_response", message: "Provider returned no content", retryable: true };
       const parsed = JSON.parse(content) as unknown;
-      const validation = validateClassificationResult(parsed);
+      const validation = findClassificationResult(parsed) ?? validateClassificationResult(parsed);
       if (!validation.ok) return { ok: false, code: "schema_validation_failed", message: validation.errors.join("; "), retryable: false };
       return { ok: true, value: validation.value, rawUsage: { inputTokens: parsedResponse.inputTokens, outputTokens: parsedResponse.outputTokens } };
     } catch (error) {
@@ -236,6 +236,60 @@ function assistantOutputText(item: unknown): string | undefined {
     const contentPart = part as Record<string, unknown>;
     return contentPart.type === "output_text" && typeof contentPart.text === "string" ? contentPart.text : "";
   }).join("");
+}
+
+function findClassificationResult(value: unknown, depth = 0): ReturnType<typeof validateClassificationResult> | undefined {
+  const direct = validateClassificationResult(value);
+  if (direct.ok) return direct;
+  if (depth >= 4) return undefined;
+
+  if (typeof value === "string") {
+    const parsed = parseJsonString(value);
+    return parsed === undefined ? undefined : findClassificationResult(parsed, depth + 1);
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findClassificationResult(item, depth + 1);
+      if (found?.ok) return found;
+    }
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const wrapperKeys = [
+    "classification",
+    "classification_result",
+    "ClassificationResult",
+    "result",
+    "value",
+    "data",
+    "response",
+    "output",
+    "output_text",
+    "content",
+    "message",
+    "text",
+    "json",
+    "parsed"
+  ];
+  for (const key of wrapperKeys) {
+    if (!(key in record)) continue;
+    const found = findClassificationResult(record[key], depth + 1);
+    if (found?.ok) return found;
+  }
+  return undefined;
+}
+
+function parseJsonString(value: string): unknown | undefined {
+  const trimmed = value.trim();
+  if (!trimmed || !["{", "["].includes(trimmed[0])) return undefined;
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function codexHeaders(accessToken: string): Record<string, string> {
