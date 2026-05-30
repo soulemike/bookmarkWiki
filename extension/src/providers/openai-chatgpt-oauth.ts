@@ -31,6 +31,8 @@ interface CodexSseEvent {
   response?: { usage?: { input_tokens?: number; output_tokens?: number } };
 }
 
+type ClassificationValidation = ReturnType<typeof validateClassificationResult>;
+
 export interface DeviceAuthorizationSession {
   device_auth_id: string;
   user_code: string;
@@ -92,7 +94,8 @@ export class OpenAIChatGptOAuthProvider implements AIProvider {
       if (!content) return { ok: false, code: "invalid_response", message: "Provider returned no content", retryable: true };
       const parsed = parseJsonString(content);
       if (parsed === undefined) return { ok: false, code: "invalid_response", message: "Provider returned content that was not valid ClassificationResult JSON", retryable: true };
-      const validation = findClassificationResult(parsed) ?? validateClassificationResult(parsed);
+      const validation = findClassificationResult(parsed);
+      if (!validation) return { ok: false, code: "invalid_response", message: "Provider response did not contain ClassificationResult JSON", retryable: true };
       if (!validation.ok) return { ok: false, code: "schema_validation_failed", message: validation.errors.join("; "), retryable: false };
       return { ok: true, value: validation.value, rawUsage: { inputTokens: parsedResponse.inputTokens, outputTokens: parsedResponse.outputTokens } };
     } catch (error) {
@@ -239,26 +242,29 @@ function assistantOutputText(item: unknown): string | undefined {
   }).join("");
 }
 
-function findClassificationResult(value: unknown, depth = 0): ReturnType<typeof validateClassificationResult> | undefined {
+function findClassificationResult(value: unknown, depth = 0, seen = new WeakSet<object>()): ClassificationValidation | undefined {
   const direct = validateClassificationResult(value);
   if (direct.ok) return direct;
   if (depth >= 4) return undefined;
 
   if (typeof value === "string") {
     const parsed = parseJsonString(value);
-    return parsed === undefined ? undefined : findClassificationResult(parsed, depth + 1);
+    return parsed === undefined ? undefined : findClassificationResult(parsed, depth + 1, seen);
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = findClassificationResult(item, depth + 1);
+      const found = findClassificationResult(item, depth + 1, seen);
       if (found?.ok) return found;
     }
     return undefined;
   }
 
   if (!value || typeof value !== "object") return undefined;
+  if (seen.has(value)) return undefined;
+  seen.add(value);
   const record = value as Record<string, unknown>;
+  if (hasClassificationField(record)) return direct;
   const wrapperKeys = [
     "classification",
     "classification_result",
@@ -270,6 +276,7 @@ function findClassificationResult(value: unknown, depth = 0): ReturnType<typeof 
     "output",
     "output_text",
     "content",
+    "delta",
     "message",
     "text",
     "json",
@@ -277,10 +284,18 @@ function findClassificationResult(value: unknown, depth = 0): ReturnType<typeof 
   ];
   for (const key of wrapperKeys) {
     if (!(key in record)) continue;
-    const found = findClassificationResult(record[key], depth + 1);
+    const found = findClassificationResult(record[key], depth + 1, seen);
+    if (found?.ok) return found;
+  }
+  for (const nested of Object.values(record)) {
+    const found = findClassificationResult(nested, depth + 1, seen);
     if (found?.ok) return found;
   }
   return undefined;
+}
+
+function hasClassificationField(record: Record<string, unknown>): boolean {
+  return ["url", "original_title", "descriptive_title", "summary", "reason", "recommended_action", "content_type", "tags", "confidence", "target_folder"].some((field) => field in record);
 }
 
 function parseJsonString(value: string): unknown | undefined {

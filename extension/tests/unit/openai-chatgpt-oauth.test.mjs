@@ -151,6 +151,38 @@ test("ChatGPT OAuth classification extracts JSON from fenced provider text", asy
   }
 });
 
+test("ChatGPT OAuth classification extracts JSON from event-like delta wrapper text", async () => {
+  const originalFetch = globalThis.fetch;
+  const json = JSON.stringify(classificationJson());
+  globalThis.fetch = async () => new Response(codexSse(JSON.stringify({ type: "response.output_text.delta", delta: json })), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+
+  try {
+    const provider = new OpenAIChatGptOAuthProvider(config);
+    const result = await provider.classifyBookmark({ url: "https://example.com", title: "Example", taxonomyFolders: ["/Bookmarks Bar/Work"] });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.value.descriptive_title, "Example classified");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ChatGPT OAuth classification does not validate unrelated wrapper as classification", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(codexSse(JSON.stringify({ type: "response.completed", status: "complete" })), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+
+  try {
+    const provider = new OpenAIChatGptOAuthProvider(config);
+    const result = await provider.classifyBookmark({ url: "https://example.com", title: "Example", taxonomyFolders: ["/Bookmarks Bar/Work"] });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "invalid_response");
+    assert.equal(result.message, "Provider response did not contain ClassificationResult JSON");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("ChatGPT OAuth Codex request uses responses input message shape", () => {
   const request = codexClassificationRequest(config, { url: "https://example.com", title: "Example", taxonomyFolders: ["/Bookmarks Bar/Work"] });
 
