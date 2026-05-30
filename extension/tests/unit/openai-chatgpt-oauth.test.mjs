@@ -106,6 +106,19 @@ test("ChatGPT OAuth Codex SSE parser extracts assistant output_text JSON", () =>
   assert.equal(parsed.outputTokens, 34);
 });
 
+test("ChatGPT OAuth Codex SSE parser does not duplicate final assistant item text", () => {
+  const json = JSON.stringify(classificationJson());
+  const parsed = parseCodexSse([
+    `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: json.slice(0, 55) })}`,
+    `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: json.slice(55) })}`,
+    `event: response.output_item.done\ndata: ${JSON.stringify({ type: "response.output_item.done", item: { type: "message", role: "assistant", content: [{ type: "output_text", text: json }] } })}`,
+    "data: [DONE]"
+  ].join("\n\n"));
+
+  assert.equal(parsed.content, json);
+  assert.deepEqual(JSON.parse(parsed.content), classificationJson());
+});
+
 test("ChatGPT OAuth Codex request uses responses input message shape", () => {
   const request = codexClassificationRequest(config, { url: "https://example.com", title: "Example", taxonomyFolders: ["/Bookmarks Bar/Work"] });
 

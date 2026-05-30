@@ -200,7 +200,8 @@ export function codexClassificationRequest(config: OpenAIChatGptOAuthProviderCon
 }
 
 export function parseCodexSse(body: string): { content: string; inputTokens?: number; outputTokens?: number } {
-  let content = "";
+  let deltaContent = "";
+  let itemContent = "";
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
   for (const eventText of body.split(/\n\n+/)) {
@@ -210,9 +211,9 @@ export function parseCodexSse(body: string): { content: string; inputTokens?: nu
       if (!data || data === "[DONE]") continue;
       try {
         const event = JSON.parse(data) as CodexSseEvent;
-        if (event.type === "response.output_text.delta" && typeof event.delta === "string") content += event.delta;
+        if (event.type === "response.output_text.delta" && typeof event.delta === "string") deltaContent += event.delta;
         const itemText = assistantOutputText(event.item);
-        if (itemText) content += itemText;
+        if (itemText) itemContent = itemText;
         const usage = event.response?.usage;
         if (usage) {
           inputTokens = usage.input_tokens;
@@ -223,7 +224,7 @@ export function parseCodexSse(body: string): { content: string; inputTokens?: nu
       }
     }
   }
-  return { content: content.trim(), inputTokens, outputTokens };
+  return { content: (deltaContent || itemContent).trim(), inputTokens, outputTokens };
 }
 
 function assistantOutputText(item: unknown): string | undefined {
