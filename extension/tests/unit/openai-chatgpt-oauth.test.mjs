@@ -167,6 +167,39 @@ test("ChatGPT OAuth classification extracts JSON from event-like delta wrapper t
   }
 });
 
+test("ChatGPT OAuth classification skips schema-like property maps before valid output", async () => {
+  const originalFetch = globalThis.fetch;
+  const wrapped = [{ properties: classificationSchemaProperties() }, { classification: classificationJson() }];
+  globalThis.fetch = async () => new Response(codexSse(JSON.stringify(wrapped)), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+
+  try {
+    const provider = new OpenAIChatGptOAuthProvider(config);
+    const result = await provider.classifyBookmark({ url: "https://example.com", title: "Example", taxonomyFolders: ["/Bookmarks Bar/Work"] });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.value.url, "https://example.com");
+    assert.equal(result.value.recommended_action, "needs_review");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ChatGPT OAuth classification treats schema-only output as invalid response", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(codexSse(JSON.stringify({ properties: classificationSchemaProperties() })), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+
+  try {
+    const provider = new OpenAIChatGptOAuthProvider(config);
+    const result = await provider.classifyBookmark({ url: "https://example.com", title: "Example", taxonomyFolders: ["/Bookmarks Bar/Work"] });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "invalid_response");
+    assert.equal(result.message, "Provider response did not contain ClassificationResult JSON");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("ChatGPT OAuth classification does not validate unrelated wrapper as classification", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(codexSse(JSON.stringify({ type: "response.completed", status: "complete" })), { status: 200, headers: { "Content-Type": "text/event-stream" } });
@@ -190,6 +223,9 @@ test("ChatGPT OAuth Codex request uses responses input message shape", () => {
   assert.equal(request.stream, true);
   assert.equal(request.input[0].role, "user");
   assert.equal(request.input[0].content[0].type, "input_text");
+  assert.equal(request.text.format.type, "json_schema");
+  assert.equal(request.text.format.name, "ClassificationResult");
+  assert.equal(request.text.format.schema.properties.original_title.type, "string");
 });
 
 function classificationJson() {
@@ -205,6 +241,22 @@ function classificationJson() {
     confidence: 0.8,
     recommended_action: "needs_review",
     reason: "Matched test taxonomy."
+  };
+}
+
+function classificationSchemaProperties() {
+  return {
+    url: { type: "string" },
+    original_title: { type: "string" },
+    descriptive_title: { type: "string" },
+    summary: { type: "string" },
+    target_folder: { type: "string" },
+    tags: { type: "array", items: { type: "string" } },
+    content_type: { enum: ["article", "documentation", "repository", "video", "tool", "reference", "product", "unknown"] },
+    audience: { enum: ["general", "technical", "business", "personal", "unknown"] },
+    confidence: { type: "number", minimum: 0, maximum: 1 },
+    recommended_action: { enum: ["move", "needs_review", "ignore", "hold"] },
+    reason: { type: "string" }
   };
 }
 
