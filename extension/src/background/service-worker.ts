@@ -109,6 +109,17 @@ export function ensureQueueProcessingAlarm(): void {
   chrome.alarms.create("process-queue", { periodInMinutes: 1 });
 }
 
+export function preserveOAuthSessionForSettingsSave(incoming: ProviderConfig, saved: ProviderConfig | undefined): ProviderConfig {
+  if (incoming.provider !== "openai-chatgpt-oauth" || saved?.provider !== "openai-chatgpt-oauth") return incoming;
+  if (incoming.base_url !== saved.base_url || hasLegacyOAuthMetadata(saved)) return incoming;
+  return {
+    ...incoming,
+    access_token: incoming.access_token ?? saved.access_token,
+    refresh_token: incoming.refresh_token ?? saved.refresh_token,
+    expires_at: incoming.expires_at ?? saved.expires_at
+  };
+}
+
 export async function kickQueueProcessing(): Promise<void> {
   ensureQueueProcessingAlarm();
   for (let processed = 0; processed < MAX_QUEUE_DRAIN_PER_KICK; processed += 1) {
@@ -131,7 +142,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     else if (message?.type === "settings:save") {
       await storage.saveSettings(message.settings);
       if (message.taxonomy) await storage.saveTaxonomy(message.taxonomy);
-      if (message.providerConfig) await storage.saveProviderConfig(message.providerConfig);
+      if (message.providerConfig) {
+        const providerConfig = message.providerConfig as ProviderConfig;
+        await storage.saveProviderConfig(preserveOAuthSessionForSettingsSave(providerConfig, await storage.getProviderConfig()));
+      }
       sendResponse({ ok: true });
     } else if (message?.type === "oauth:start") {
       const config = message.providerConfig as ProviderConfig | undefined;
@@ -173,3 +187,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   })();
   return true;
 });
+
+function hasLegacyOAuthMetadata(config: ProviderConfig): boolean {
+  const value = config as unknown as Record<string, unknown>;
+  return ["client_id", "authorization_url", "token_url", "scopes"].some((field) => field in value);
+}

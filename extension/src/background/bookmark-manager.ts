@@ -46,9 +46,12 @@ export class BookmarkManager {
     const normalizedUrl = normalizeUrl(url);
     const queue = await storage.getQueue();
     const existing = queue.find((item) => item.normalizedUrl === normalizedUrl && !["ignored", "archived"].includes(item.status));
-    if (existing) return existing;
-
     const folders = await this.ensureDefaultFolders();
+    if (existing) {
+      if (chromeBookmarkId && !options.skipMove) await chrome.bookmarks.move(chromeBookmarkId, { parentId: folders[BOOKMARK_QUEUE_FOLDER] });
+      return existing;
+    }
+
     const bookmarkId = chromeBookmarkId ?? (await chrome.bookmarks.create({ parentId: folders[BOOKMARK_QUEUE_FOLDER], title, url })).id;
     if (chromeBookmarkId && !options.skipMove) await chrome.bookmarks.move(chromeBookmarkId, { parentId: folders[BOOKMARK_QUEUE_FOLDER] });
     const now = new Date().toISOString();

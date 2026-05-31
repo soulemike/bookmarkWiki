@@ -76,7 +76,7 @@ function treeNode(id) {
 }
 
 resetChromeMock();
-const { handleActionClicked, handleBookmarkCreated, handleBookmarkMoved, handleContextMenuClicked, handleInstalled, handleStartup, kickQueueProcessing } = await import("../../dist/src/background/service-worker.js");
+const { handleActionClicked, handleBookmarkCreated, handleBookmarkMoved, handleContextMenuClicked, handleInstalled, handleStartup, kickQueueProcessing, preserveOAuthSessionForSettingsSave } = await import("../../dist/src/background/service-worker.js");
 
 function queuedItem(suffix) {
   return {
@@ -92,6 +92,63 @@ function queuedItem(suffix) {
     attemptCount: 0
   };
 }
+
+test("settings save preserves an active ChatGPT OAuth session", () => {
+  const savedConfig = {
+    provider: "openai-chatgpt-oauth",
+    base_url: "https://chatgpt.com/backend-api/codex",
+    model: "gpt-5.5",
+    access_token: "saved-access-token",
+    refresh_token: "saved-refresh-token",
+    expires_at: "2099-01-01T00:00:00.000Z",
+    temperature: 0.1,
+    max_tokens: 1200,
+    timeout_seconds: 30,
+    retry_count: 1
+  };
+  const savedAfterOptionsChange = {
+    provider: "openai-chatgpt-oauth",
+    base_url: savedConfig.base_url,
+    model: "gpt-5.5",
+    temperature: 0.1,
+    max_tokens: 1200,
+    timeout_seconds: 30,
+    retry_count: 1
+  };
+
+  const preserved = preserveOAuthSessionForSettingsSave(savedAfterOptionsChange, savedConfig);
+
+  assert.equal(preserved.access_token, "saved-access-token");
+  assert.equal(preserved.refresh_token, "saved-refresh-token");
+  assert.equal(preserved.expires_at, "2099-01-01T00:00:00.000Z");
+});
+
+test("settings save does not preserve legacy ChatGPT OAuth sessions", () => {
+  const savedConfig = {
+    provider: "openai-chatgpt-oauth",
+    base_url: "https://chatgpt.com/backend-api/codex",
+    model: "gpt-5.5",
+    access_token: "saved-access-token",
+    client_id: "legacy-client",
+    temperature: 0.1,
+    max_tokens: 1200,
+    timeout_seconds: 30,
+    retry_count: 1
+  };
+  const savedAfterOptionsChange = {
+    provider: "openai-chatgpt-oauth",
+    base_url: savedConfig.base_url,
+    model: "gpt-5.5",
+    temperature: 0.1,
+    max_tokens: 1200,
+    timeout_seconds: 30,
+    retry_count: 1
+  };
+
+  const preserved = preserveOAuthSessionForSettingsSave(savedAfterOptionsChange, savedConfig);
+
+  assert.equal("access_token" in preserved, false);
+});
 
 test("install repairs queue processing alarm", async () => {
   resetChromeMock();
@@ -170,6 +227,36 @@ test("bookmarks outside _Bookmark Queue still require normal routing opt-in", as
   await handleBookmarkCreated(bookmark.id, bookmark);
 
   assert.equal(localStore.queueItems, undefined);
+});
+
+test("created bookmarks in normal folders move to _Bookmark Queue when normal routing is on", async () => {
+  resetChromeMock();
+  localStore.settings = { routeNormalBookmarks: true };
+  const bookmark = { id: "bookmark-4", parentId: "work-folder", title: "Work bookmark", url: "https://example.com/work" };
+  nodes.set(bookmark.id, bookmark);
+
+  await handleBookmarkCreated(bookmark.id, bookmark);
+
+  assert.equal(nodes.get(bookmark.id).parentId, QUEUE_FOLDER_ID);
+  assert.equal(localStore.queueItems.length, 1);
+  assert.equal(localStore.queueItems[0].chromeBookmarkId, bookmark.id);
+  assert.equal(localStore.queueItems[0].source, "bookmark_event");
+  assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
+});
+
+test("deduped normal bookmarks still move to _Bookmark Queue when normal routing is on", async () => {
+  resetChromeMock();
+  localStore.settings = { routeNormalBookmarks: true };
+  localStore.queueItems = [queuedItem("duplicate")];
+  const bookmark = { id: "bookmark-5", parentId: "work-folder", title: "Duplicate work bookmark", url: "https://example.com/duplicate" };
+  nodes.set(bookmark.id, bookmark);
+
+  await handleBookmarkCreated(bookmark.id, bookmark);
+
+  assert.equal(nodes.get(bookmark.id).parentId, QUEUE_FOLDER_ID);
+  assert.equal(localStore.queueItems.length, 1);
+  assert.equal(localStore.queueItems[0].chromeBookmarkId, "bookmark-duplicate");
+  assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
 });
 
 test("queue processing kick drains multiple queued items without manual sidepanel action", async () => {
