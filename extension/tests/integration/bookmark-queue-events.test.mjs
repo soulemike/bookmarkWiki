@@ -266,14 +266,14 @@ test("context menu enqueues link and starts processing", async () => {
   assert.equal(createdAlarms.some((alarm) => alarm.name === "process-queue"), true);
 });
 
-test("created bookmarks already inside _Bookmark Queue are queued when normal routing is off", async () => {
+test("created bookmarks already inside _Bookmark Queue move to review after processing", async () => {
   resetChromeMock();
   const bookmark = { id: "bookmark-1", parentId: QUEUE_FOLDER_ID, title: "Queued manually", url: "https://example.com/manual?utm_source=test" };
   nodes.set(bookmark.id, bookmark);
 
   await handleBookmarkCreated(bookmark.id, bookmark);
 
-  assert.equal(nodes.get(bookmark.id).parentId, QUEUE_FOLDER_ID);
+  assert.equal(nodes.get(bookmark.id).parentId, "review-folder");
   assert.equal(localStore.queueItems.length, 1);
   assert.equal(localStore.queueItems[0].chromeBookmarkId, bookmark.id);
   assert.notEqual(localStore.queueItems[0].status, "queued");
@@ -305,7 +305,7 @@ test("bookmarks outside _Bookmark Queue still require normal routing opt-in", as
   assert.equal(localStore.queueItems, undefined);
 });
 
-test("created bookmarks in normal folders move to _Bookmark Queue when normal routing is on", async () => {
+test("created bookmarks in normal folders move to review after processing when normal routing is on", async () => {
   resetChromeMock();
   localStore.settings = { routeNormalBookmarks: true };
   const bookmark = { id: "bookmark-4", parentId: "work-folder", title: "Work bookmark", url: "https://example.com/work" };
@@ -313,7 +313,7 @@ test("created bookmarks in normal folders move to _Bookmark Queue when normal ro
 
   await handleBookmarkCreated(bookmark.id, bookmark);
 
-  assert.equal(nodes.get(bookmark.id).parentId, QUEUE_FOLDER_ID);
+  assert.equal(nodes.get(bookmark.id).parentId, "review-folder");
   assert.equal(localStore.queueItems.length, 1);
   assert.equal(localStore.queueItems[0].chromeBookmarkId, bookmark.id);
   assert.equal(localStore.queueItems[0].source, "bookmark_event");

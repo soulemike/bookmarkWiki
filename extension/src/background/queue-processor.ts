@@ -1,6 +1,7 @@
 import type { AuditLogEntry } from "../models/audit-log.js";
 import type { BookmarkQueueItem } from "../models/bookmark.js";
 import { decideByConfidence } from "../utils/confidence.js";
+import { BookmarkManager, NEEDS_REVIEW_FOLDER } from "./bookmark-manager.js";
 import { FolderResolver } from "./folder-resolver.js";
 import { OperationGuardManager } from "./operation-guard.js";
 import { storage } from "./storage.js";
@@ -19,7 +20,8 @@ export class QueueProcessor {
     private classifier = new ClassificationOrchestrator(),
     private folderResolver = new FolderResolver(),
     private guards = new OperationGuardManager(),
-    private syncDispatcher = new SyncDispatcher()
+    private syncDispatcher = new SyncDispatcher(),
+    private bookmarkManager = new BookmarkManager()
   ) {}
 
   async processNext(options: ProcessNextOptions = {}): Promise<BookmarkQueueItem | undefined> {
@@ -41,6 +43,7 @@ export class QueueProcessor {
       item.error = error instanceof Error ? error.message : "Unexpected classification error";
       item.lockedUntil = undefined;
       await storage.upsertQueueItem(item);
+      await this.moveToNeedsReviewFolder(item);
       return item;
     }
     if (!result.ok) {
@@ -52,6 +55,7 @@ export class QueueProcessor {
       item.error = result.message;
       item.lockedUntil = undefined;
       await storage.upsertQueueItem(item);
+      if (item.status === "needs_review") await this.moveToNeedsReviewFolder(item);
       return item;
     }
 
@@ -87,7 +91,19 @@ export class QueueProcessor {
     }
     item.updatedAt = new Date().toISOString();
     await storage.upsertQueueItem(item);
+    if (status === "needs_review") await this.moveToNeedsReviewFolder(item);
     return item;
+  }
+
+  private async moveToNeedsReviewFolder(item: BookmarkQueueItem): Promise<void> {
+    if (!item.chromeBookmarkId) return;
+    const folders = await this.bookmarkManager.ensureDefaultFolders();
+    const reviewFolderId = folders[NEEDS_REVIEW_FOLDER];
+    const [before] = await chrome.bookmarks.get(item.chromeBookmarkId);
+    if (!before || before.parentId === reviewFolderId) return;
+    const moveGuard = await this.guards.add(item.chromeBookmarkId, "move");
+    await chrome.bookmarks.move(item.chromeBookmarkId, { parentId: reviewFolderId });
+    await storage.appendAudit({ operationId: moveGuard.operationId, timestamp: new Date().toISOString(), action: "move_bookmark", chromeBookmarkId: item.chromeBookmarkId, url: item.url, previousParentId: before.parentId, previousIndex: before.index, newParentId: reviewFolderId, newFolderPath: `/Bookmarks Bar/${NEEDS_REVIEW_FOLDER}` });
   }
 
   async approve(id: string, edits: Partial<Pick<BookmarkQueueItem, "proposedTitle" | "proposedFolder">> = {}): Promise<BookmarkQueueItem | undefined> {

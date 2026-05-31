@@ -6,6 +6,7 @@ import { storage } from "./storage.js";
 
 export const DEFAULT_EXTENSION_FOLDERS = ["_Bookmark Queue", "_Needs Review", "_Processed", "_Archive"];
 export const BOOKMARK_QUEUE_FOLDER = "_Bookmark Queue";
+export const NEEDS_REVIEW_FOLDER = "_Needs Review";
 
 export interface QueueBookmarkOptions {
   skipMove?: boolean;

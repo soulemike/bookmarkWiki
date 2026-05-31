@@ -6,10 +6,18 @@ import { OPENAI_CHATGPT_CODEX_BASE_URL } from "../../dist/src/providers/openai-c
 let localStore;
 let movedTo;
 let updatedTitle;
+let nodes;
 
 function resetChromeMock() {
   movedTo = undefined;
   updatedTitle = undefined;
+  nodes = new Map([
+    ["1", { id: "1", title: "Bookmarks Bar" }],
+    ["queue-folder", { id: "queue-folder", parentId: "1", title: "_Bookmark Queue" }],
+    ["review-folder", { id: "review-folder", parentId: "1", title: "_Needs Review" }],
+    ["work-folder", { id: "work-folder", parentId: "1", title: "Work" }],
+    ["bookmark-1", { id: "bookmark-1", parentId: "queue-folder", index: 0, title: "Example", url: "https://example.com" }]
+  ]);
   localStore = {
     queueItems: [{
       id: "queue-1",
@@ -61,9 +69,21 @@ function resetChromeMock() {
           children: [{ id: "work-folder", parentId: "1", title: "Work", children: [] }]
         }]
       }],
-      get: async () => [{ id: "bookmark-1", parentId: "queue-folder", index: 0, title: "Example", url: "https://example.com" }],
+      getChildren: async (id) => [...nodes.values()].filter((node) => node.parentId === id),
+      create: async (bookmark) => {
+        const id = `created-${nodes.size}`;
+        const node = { id, parentId: bookmark.parentId, title: bookmark.title ?? "", url: bookmark.url };
+        nodes.set(id, node);
+        return node;
+      },
+      get: async (id) => [nodes.get(id)],
       update: async (_id, changes) => { updatedTitle = changes.title; },
-      move: async (_id, destination) => { movedTo = destination.parentId; }
+      move: async (id, destination) => {
+        movedTo = destination.parentId;
+        const node = nodes.get(id);
+        node.parentId = destination.parentId;
+        return node;
+      }
     }
   };
 }
@@ -162,6 +182,36 @@ test("QueueProcessor clears stale provider errors after successful classificatio
   assert.equal(item.reason, "Matched rule.");
   assert.equal(item.error, undefined);
   assert.equal(item.lastErrorCode, undefined);
+});
+
+test("QueueProcessor moves needs_review bookmarks to the review folder", async () => {
+  resetChromeMock();
+  nodes.get("bookmark-1").parentId = "work-folder";
+  const classifier = {
+    classify: async () => ({
+      ok: true,
+      value: {
+        url: "https://example.com",
+        original_title: "Example",
+        descriptive_title: "Example: Classified",
+        summary: "Summary",
+        target_folder: "/Bookmarks Bar/Work",
+        tags: ["example"],
+        content_type: "reference",
+        confidence: 0.72,
+        recommended_action: "needs_review",
+        reason: "Matched rule."
+      }
+    })
+  };
+  const processor = new QueueProcessor(classifier);
+
+  const item = await processor.processNext();
+
+  assert.equal(item.status, "needs_review");
+  assert.equal(nodes.get("bookmark-1").parentId, "review-folder");
+  assert.equal(movedTo, "review-folder");
+  assert.equal(localStore.auditLog.some((entry) => entry.action === "move_bookmark" && entry.newParentId === "review-folder"), true);
 });
 
 test("QueueProcessor clears stale display text when requeueing for reclassification", async () => {
