@@ -150,6 +150,82 @@ test("settings save does not preserve legacy ChatGPT OAuth sessions", () => {
   assert.equal("access_token" in preserved, false);
 });
 
+test("settings save keeps refreshed ChatGPT OAuth tokens over stale incoming tokens", () => {
+  const savedConfig = {
+    provider: "openai-chatgpt-oauth",
+    base_url: "https://chatgpt.com/backend-api/codex",
+    model: "gpt-5.5",
+    access_token: "refreshed-access-token",
+    refresh_token: "refreshed-refresh-token",
+    expires_at: "2099-01-01T00:00:00.000Z",
+    temperature: 0.1,
+    max_tokens: 1200,
+    timeout_seconds: 30,
+    retry_count: 1
+  };
+  const staleOptionsPageConfig = {
+    ...savedConfig,
+    access_token: "stale-access-token",
+    refresh_token: "stale-refresh-token",
+    expires_at: "2000-01-01T00:00:00.000Z"
+  };
+
+  const preserved = preserveOAuthSessionForSettingsSave(staleOptionsPageConfig, savedConfig);
+
+  assert.equal(preserved.access_token, "refreshed-access-token");
+  assert.equal(preserved.refresh_token, "refreshed-refresh-token");
+  assert.equal(preserved.expires_at, "2099-01-01T00:00:00.000Z");
+});
+
+test("settings save cannot resurrect a disconnected ChatGPT OAuth session", () => {
+  const disconnectedConfig = {
+    provider: "openai-chatgpt-oauth",
+    base_url: "https://chatgpt.com/backend-api/codex",
+    model: "gpt-5.5",
+    temperature: 0.1,
+    max_tokens: 1200,
+    timeout_seconds: 30,
+    retry_count: 1
+  };
+  const staleOptionsPageConfig = {
+    ...disconnectedConfig,
+    access_token: "stale-access-token",
+    refresh_token: "stale-refresh-token",
+    expires_at: "2099-01-01T00:00:00.000Z"
+  };
+
+  const preserved = preserveOAuthSessionForSettingsSave(staleOptionsPageConfig, disconnectedConfig);
+
+  assert.equal("access_token" in preserved, false);
+  assert.equal("refresh_token" in preserved, false);
+  assert.equal("expires_at" in preserved, false);
+});
+
+test("settings save does not carry ChatGPT OAuth tokens across changed base URLs", () => {
+  const savedConfig = {
+    provider: "openai-chatgpt-oauth",
+    base_url: "https://chatgpt.com/backend-api/codex",
+    model: "gpt-5.5",
+    access_token: "saved-access-token",
+    refresh_token: "saved-refresh-token",
+    expires_at: "2099-01-01T00:00:00.000Z",
+    temperature: 0.1,
+    max_tokens: 1200,
+    timeout_seconds: 30,
+    retry_count: 1
+  };
+  const changedBaseUrlConfig = {
+    ...savedConfig,
+    base_url: "https://example.test/backend-api/codex"
+  };
+
+  const preserved = preserveOAuthSessionForSettingsSave(changedBaseUrlConfig, savedConfig);
+
+  assert.equal("access_token" in preserved, false);
+  assert.equal("refresh_token" in preserved, false);
+  assert.equal("expires_at" in preserved, false);
+});
+
 test("install repairs queue processing alarm", async () => {
   resetChromeMock();
 

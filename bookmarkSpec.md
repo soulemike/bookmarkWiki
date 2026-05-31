@@ -2,6 +2,18 @@ Below is a build-ready spec for a custom Chrome extension that provides an **inb
 
 Chrome supports bookmark creation, organization, search, update, and move operations through the `chrome.bookmarks` API. The extension shall be built on Manifest V3. Local persistence shall use `chrome.storage.local`; user preferences that do not contain secrets may use `chrome.storage.sync`. Filesystem capabilities are phased: first through user-initiated browser export, then optional File System Access API folder grants, and finally an optional native messaging host for deeper local automation. ([Chrome for Developers][1])
 
+> **Current repository status:** this spec describes the target product across
+> multiple MVP phases. The repository currently implements the MVP 1 extension
+> flow: explicit active-tab/link capture, optional post-create bookmark routing,
+> local queue persistence, rule-based/OpenAI-compatible/ChatGPT OAuth
+> classification, review-first side-panel actions, approve/move, rollback-safe
+> audit entries, and a Windows-first native-host sync foundation. Bulk import,
+> full taxonomy editing, complete filesystem knowledge-base export, Git/local
+> model automation, packaged native-host installers, and macOS/Linux native-host
+> registration automation remain planned work. See
+> [`docs/implementation-status.md`](docs/implementation-status.md) for the
+> implementation snapshot and known boundaries.
+
 # Custom Chrome Extension Spec: Agentic Bookmark Queue
 
 ## 1. Product Definition

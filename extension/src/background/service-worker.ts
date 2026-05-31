@@ -110,14 +110,15 @@ export function ensureQueueProcessingAlarm(): void {
 }
 
 export function preserveOAuthSessionForSettingsSave(incoming: ProviderConfig, saved: ProviderConfig | undefined): ProviderConfig {
-  if (incoming.provider !== "openai-chatgpt-oauth" || saved?.provider !== "openai-chatgpt-oauth") return incoming;
-  if (incoming.base_url !== saved.base_url || hasLegacyOAuthMetadata(saved)) return incoming;
-  return {
-    ...incoming,
-    access_token: incoming.access_token ?? saved.access_token,
-    refresh_token: incoming.refresh_token ?? saved.refresh_token,
-    expires_at: incoming.expires_at ?? saved.expires_at
-  };
+  if (incoming.provider !== "openai-chatgpt-oauth") return incoming;
+  const tokenlessConfig = disconnectChatGptOAuth(incoming);
+  if (saved?.provider !== "openai-chatgpt-oauth") return tokenlessConfig;
+  if (incoming.base_url !== saved.base_url || hasLegacyOAuthMetadata(saved)) return tokenlessConfig;
+  const tokenFields: Partial<Pick<typeof saved, "access_token" | "refresh_token" | "expires_at">> = {};
+  if (saved.access_token !== undefined) tokenFields.access_token = saved.access_token;
+  if (saved.refresh_token !== undefined) tokenFields.refresh_token = saved.refresh_token;
+  if (saved.expires_at !== undefined) tokenFields.expires_at = saved.expires_at;
+  return { ...tokenlessConfig, ...tokenFields };
 }
 
 export async function kickQueueProcessing(): Promise<void> {
