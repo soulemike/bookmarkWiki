@@ -1,4 +1,5 @@
 import type { BookmarkQueueItem } from "../../models/bookmark.js";
+import { isProcessedQueueItem } from "../../models/queue-retention.js";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 let statusMessage = "";
@@ -9,6 +10,8 @@ async function send<T>(message: unknown): Promise<T> {
 
 async function load(): Promise<void> {
   const { queue } = await send<{ queue: BookmarkQueueItem[] }>({ type: "queue:list" });
+  const activeQueue = queue.filter((item) => !isProcessedQueueItem(item));
+  const processedQueue = queue.filter(isProcessedQueueItem);
   app.innerHTML = `
     <header>
       <h1>Bookmark Queue Agent</h1>
@@ -16,7 +19,14 @@ async function load(): Promise<void> {
       <button id="rollback">Rollback last move</button>
     </header>
     ${statusMessage ? `<p class="status">${escapeHtml(statusMessage)}</p>` : ""}
-    <section>${queue.map(renderItem).join("") || "<p>No queued bookmarks yet.</p>"}</section>
+    <section aria-label="Active bookmarks">
+      <h2 class="section-title">Active</h2>
+      ${activeQueue.map(renderItem).join("") || "<p>No active bookmarks need attention.</p>"}
+    </section>
+    <details class="history" ${activeQueue.length === 0 && processedQueue.length > 0 ? "open" : ""}>
+      <summary>Processed history (${processedQueue.length})</summary>
+      ${processedQueue.map(renderItem).join("") || "<p>No processed bookmarks retained.</p>"}
+    </details>
   `;
   document.querySelector<HTMLButtonElement>("#process")?.addEventListener("click", async () => {
     const response = await send<{ item?: BookmarkQueueItem }>({ type: "queue:process-next" });

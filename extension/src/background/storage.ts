@@ -1,5 +1,6 @@
 import type { AuditLogEntry } from "../models/audit-log.js";
 import type { BookmarkQueueItem } from "../models/bookmark.js";
+import { DEFAULT_PROCESSED_RECORD_RETENTION_DAYS, pruneProcessedQueueItems } from "../models/queue-retention.js";
 import { DEFAULT_TAXONOMY, type BookmarkTaxonomy } from "../models/taxonomy.js";
 
 export interface UserSettings {
@@ -11,6 +12,7 @@ export interface UserSettings {
   autoMoveThreshold: number;
   excludedDomains: string[];
   allowPageTextExtraction: boolean;
+  processedRecordRetentionDays: number;
   enableNativeHostSync: boolean;
   nativeHostTargetPath: string;
 }
@@ -24,6 +26,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   autoMoveThreshold: 0.9,
   excludedDomains: [],
   allowPageTextExtraction: false,
+  processedRecordRetentionDays: DEFAULT_PROCESSED_RECORD_RETENTION_DAYS,
   enableNativeHostSync: false,
   nativeHostTargetPath: ""
 };
@@ -84,6 +87,12 @@ export const storage = {
     if (index >= 0) queue[index] = { ...queue[index], ...item, updatedAt: new Date().toISOString() };
     else queue.push(item);
     await this.saveQueue(queue);
+  },
+  async pruneProcessedQueueItems(retentionDays: number): Promise<BookmarkQueueItem[]> {
+    const queue = await this.getQueue();
+    const retainedQueue = pruneProcessedQueueItems(queue, retentionDays);
+    if (retainedQueue.length !== queue.length) await this.saveQueue(retainedQueue);
+    return retainedQueue;
   },
   async getAuditLog(): Promise<AuditLogEntry[]> {
     return getLocal(keys.audit, [] as AuditLogEntry[]);

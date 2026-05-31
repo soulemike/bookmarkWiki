@@ -1,7 +1,7 @@
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 
-await rm("dist", { recursive: true, force: true });
+await rm("dist", { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 await mkdir("dist", { recursive: true });
 execFileSync("tsc", ["-p", "tsconfig.json"], { stdio: "inherit" });
 await cp("public/manifest.json", "dist/manifest.json");

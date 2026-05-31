@@ -131,7 +131,10 @@ export async function kickQueueProcessing(): Promise<void> {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   void (async () => {
-    if (message?.type === "queue:list") sendResponse({ queue: await storage.getQueue(), audit: await storage.getAuditLog() });
+    if (message?.type === "queue:list") {
+      const settings = await storage.getSettings();
+      sendResponse({ queue: await storage.pruneProcessedQueueItems(settings.processedRecordRetentionDays), audit: await storage.getAuditLog() });
+    }
     else if (message?.type === "queue:process-next") sendResponse({ item: await processor.processNext({ retryTransientFailures: false, includeLocked: true }) });
     else if (message?.type === "queue:approve") sendResponse({ item: await processor.approve(message.id, message.edits) });
     else if (message?.type === "queue:sync-native") sendResponse({ item: await processor.syncMovedItem(message.id) });

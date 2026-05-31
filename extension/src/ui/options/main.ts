@@ -1,5 +1,6 @@
 import type { ProviderConfig, UserSettings } from "../../background/storage.js";
 import type { BookmarkTaxonomy } from "../../models/taxonomy.js";
+import { normalizeProcessedRecordRetentionDays } from "../../models/queue-retention.js";
 import { OPENAI_CHATGPT_CODEX_BASE_URL, OPENAI_CHATGPT_DEVICE_CALLBACK_URL, OPENAI_CHATGPT_OAUTH_CLIENT_ID, type DeviceAuthorizationSession, validateOAuthConnectConfig } from "../../providers/openai-chatgpt-oauth.js";
 import { providerOriginPattern, validateProviderBaseUrl } from "../../providers/openai-compatible.js";
 
@@ -29,6 +30,8 @@ async function load(): Promise<void> {
       <label>Review threshold <input name="reviewThreshold" type="number" min="0" max="1" step="0.01" value="${settings.reviewThreshold}"></label>
       <label>Auto-move threshold <input name="autoMoveThreshold" type="number" min="0" max="1" step="0.01" value="${settings.autoMoveThreshold}"></label>
       <p class="hint">A bookmark only auto-moves when auto-move is enabled and confidence is at or above the auto-move threshold. The default is 0.90.</p>
+      <label>Processed history retention <input name="processedRecordRetentionDays" type="number" min="0" max="3650" step="1" value="${settings.processedRecordRetentionDays}"></label>
+      <p class="hint">Fully processed records are hidden from the active queue and pruned after this many days. Use 0 to keep processed history indefinitely.</p>
       <label><input name="allowPageTextExtraction" type="checkbox" ${settings.allowPageTextExtraction ? "checked" : ""}> Allow page text extraction</label>
       <section class="provider-note" aria-label="Native host sync settings">
         <strong>Windows-first native host sync</strong>
@@ -80,6 +83,7 @@ async function load(): Promise<void> {
       enableAutoMove: data.get("enableAutoMove") === "on",
       reviewThreshold: clampUnitInterval(Number(data.get("reviewThreshold")), settings.reviewThreshold),
       autoMoveThreshold: clampUnitInterval(Number(data.get("autoMoveThreshold")), settings.autoMoveThreshold),
+      processedRecordRetentionDays: normalizeProcessedRecordRetentionDays(Number(data.get("processedRecordRetentionDays")), settings.processedRecordRetentionDays),
       allowPageTextExtraction: data.get("allowPageTextExtraction") === "on",
       enableNativeHostSync: data.get("enableNativeHostSync") === "on",
       nativeHostTargetPath: String(data.get("nativeHostTargetPath") ?? "").trim(),
