@@ -23,55 +23,96 @@ async function load(): Promise<void> {
   const openAICompatibleConfig = savedProviderConfig?.provider === "openai-compatible" ? savedProviderConfig : undefined;
   const chatGptOAuthConfig = savedProviderConfig?.provider === "openai-chatgpt-oauth" ? savedProviderConfig : undefined;
   app.innerHTML = `
-    <h1>Bookmark Queue Agent Options</h1>
+    <header class="page-hero">
+      <p class="eyebrow">Local-first setup</p>
+      <h1>Bookmark Queue Agent Options</h1>
+      <p>Start safe with rule-based review, then opt into remote providers, auto-move, or local file sync when you trust the workflow.</p>
+    </header>
+    <div id="status-region" aria-live="polite"></div>
     <form id="settings-form">
-      <label><input name="routeNormalBookmarks" type="checkbox" ${settings.routeNormalBookmarks ? "checked" : ""}> Route normal bookmarks to queue</label>
-      <label><input name="enableAutoMove" type="checkbox" ${settings.enableAutoMove ? "checked" : ""}> Enable auto-move for high confidence</label>
-      <label>Review threshold <input name="reviewThreshold" type="number" min="0" max="1" step="0.01" value="${settings.reviewThreshold}"></label>
-      <label>Auto-move threshold <input name="autoMoveThreshold" type="number" min="0" max="1" step="0.01" value="${settings.autoMoveThreshold}"></label>
-      <p class="hint">A bookmark only auto-moves when auto-move is enabled and confidence is at or above the auto-move threshold. The default is 0.90.</p>
-      <label>Processed history retention <input name="processedRecordRetentionDays" type="number" min="0" max="3650" step="1" value="${settings.processedRecordRetentionDays}"></label>
-      <p class="hint">Fully processed records are hidden from the active queue and pruned after this many days. Use 0 to keep processed history indefinitely.</p>
-      <label><input name="allowPageTextExtraction" type="checkbox" ${settings.allowPageTextExtraction ? "checked" : ""}> Allow page text extraction</label>
-      <section class="provider-note" aria-label="Native host sync settings">
-        <strong>Windows-first native host sync</strong>
-        <p>Set this up once to let the extension write approved bookmarks to a local folder on your PC.</p>
+      <section class="settings-card" aria-labelledby="review-heading">
+        <div class="section-intro">
+          <p class="eyebrow">Review behavior</p>
+          <h2 id="review-heading">Control when bookmarks move</h2>
+          <p>Manual review stays in charge unless you explicitly enable auto-move for very high confidence matches.</p>
+        </div>
+        <div class="field-grid">
+          <label class="switch"><input name="routeNormalBookmarks" type="checkbox" ${settings.routeNormalBookmarks ? "checked" : ""}> <span>Route normal bookmarks to queue</span></label>
+          <label class="switch"><input name="enableAutoMove" type="checkbox" ${settings.enableAutoMove ? "checked" : ""}> <span>Enable auto-move for high confidence</span></label>
+          <label>Review threshold <input name="reviewThreshold" type="number" min="0" max="1" step="0.01" value="${settings.reviewThreshold}"></label>
+          <label>Auto-move threshold <input name="autoMoveThreshold" type="number" min="0" max="1" step="0.01" value="${settings.autoMoveThreshold}"></label>
+          <label>Processed history retention <input name="processedRecordRetentionDays" type="number" min="0" max="3650" step="1" value="${settings.processedRecordRetentionDays}"></label>
+        </div>
+        <p class="hint">Default safety posture: auto-move off, review at 0.70, auto-move only at 0.90 or above, and processed records pruned by your retention setting.</p>
+      </section>
+      <section class="settings-card" aria-labelledby="privacy-heading">
+        <div class="section-intro">
+          <p class="eyebrow">Privacy boundaries</p>
+          <h2 id="privacy-heading">Keep sensitive sites out of classification</h2>
+          <p>Excluded domains block classification by every provider. Page text extraction remains opt-in and is not used by normal side-panel classification.</p>
+        </div>
+        <label class="switch"><input name="allowPageTextExtraction" type="checkbox" ${settings.allowPageTextExtraction ? "checked" : ""}> <span>Allow page text extraction for flows that explicitly supply it</span></label>
+        <label>Excluded domains <input name="excludedDomains" value="${escapeAttribute(settings.excludedDomains.join(", "))}" placeholder="internal.example.com, billing.example.com"></label>
+      </section>
+      <section class="settings-card" aria-labelledby="sync-heading">
+        <div class="section-intro">
+          <p class="eyebrow">Optional export</p>
+          <h2 id="sync-heading">Windows-first native host sync</h2>
+          <p>Set this up only if approved bookmarks should be written to a local folder as Markdown, JSON, and recent index records.</p>
+        </div>
+        <details class="setup-details">
+          <summary>Native-host setup steps</summary>
         <ol class="setup-steps">
           <li>Copy this extension's ID from <code>chrome://extensions</code>.</li>
           <li>Open PowerShell in the repo's <code>native-host</code> folder and run <code>.\\install-windows.ps1 -Browser Chrome -ExtensionId &lt;extension-id&gt;</code>.</li>
           <li>Click <strong>Test connection</strong>. If it succeeds, choose a folder and turn on local file sync.</li>
         </ol>
-        <label><input name="enableNativeHostSync" type="checkbox" ${settings.enableNativeHostSync ? "checked" : ""}> Enable local file sync for approved bookmarks</label>
+        </details>
+        <label class="switch"><input name="enableNativeHostSync" type="checkbox" ${settings.enableNativeHostSync ? "checked" : ""}> <span>Enable local file sync for approved bookmarks</span></label>
         <label>Folder to write files to <input name="nativeHostTargetPath" value="${escapeAttribute(settings.nativeHostTargetPath)}" placeholder="C:\\Users\\you\\Documents\\BookmarkWiki"></label>
-        <button id="test-native-host" type="button">Test connection</button>
+        <button id="test-native-host" class="button secondary" type="button">Test connection</button>
       </section>
-      <label>Provider
-        <select name="provider">
-          <option value="rule-based" ${settings.provider === "rule-based" ? "selected" : ""}>No-AI rule based</option>
-          <option value="openai-compatible" ${settings.provider === "openai-compatible" ? "selected" : ""}>OpenAI-compatible API / local bridge</option>
-          <option value="openai-chatgpt-oauth" ${settings.provider === "openai-chatgpt-oauth" ? "selected" : ""}>OpenAI ChatGPT OAuth</option>
-        </select>
-      </label>
-      <section class="provider-note" aria-label="Provider authentication note">
-        <strong>Supported OpenAI-compatible authentication</strong>
-        <p>Use an OpenAI Platform API project key, a token for a local OpenAI-compatible bridge, or OpenAI ChatGPT OAuth via device authorization. ChatGPT/Codex browser cookies, copied session tokens, and account web sessions are not used as credentials.</p>
-        <p>Local bridges must expose an OpenAI-compatible <code>/chat/completions</code> endpoint. Plain HTTP is allowed only for localhost or 127.0.0.1.</p>
+      <section class="settings-card" aria-labelledby="provider-heading">
+        <div class="section-intro">
+          <p class="eyebrow">Classification provider</p>
+          <h2 id="provider-heading">Choose how recommendations are generated</h2>
+          <p>No-AI rule based is the safest default. Remote or local OpenAI-compatible providers require explicit host permission.</p>
+        </div>
+        <label>Provider
+          <select name="provider">
+            <option value="rule-based" ${settings.provider === "rule-based" ? "selected" : ""}>No-AI rule based</option>
+            <option value="openai-compatible" ${settings.provider === "openai-compatible" ? "selected" : ""}>OpenAI-compatible API / local bridge</option>
+            <option value="openai-chatgpt-oauth" ${settings.provider === "openai-chatgpt-oauth" ? "selected" : ""}>OpenAI ChatGPT OAuth</option>
+          </select>
+        </label>
+        <div class="notice-panel">
+          <strong>Credential boundary</strong>
+          <p>Use an OpenAI Platform API key, a local bridge token, or ChatGPT OAuth device authorization. Browser cookies, copied ChatGPT session tokens, and Codex web sessions are not used.</p>
+          <p>Local bridges must expose an OpenAI-compatible <code>/chat/completions</code> endpoint. Plain HTTP is allowed only for localhost or 127.0.0.1.</p>
+        </div>
+        <div class="field-grid">
+          <label>Base URL <input name="base_url" value="${escapeAttribute(defaultBaseUrl(settings.provider, savedProviderConfig))}"></label>
+          <label>Model <input name="model" value="${escapeAttribute(savedProviderConfig?.model ?? "gpt-5.5")}"></label>
+          <label class="wide">API project key or compatible bearer token <input name="api_key" type="password" placeholder="Stored locally; leave blank to keep saved key"></label>
+        </div>
+        <details class="setup-details" ${settings.provider === "openai-chatgpt-oauth" ? "open" : ""}>
+          <summary>ChatGPT OAuth device authorization</summary>
+          <p>This provider uses OpenAI's device authorization flow with public client <code>${OPENAI_CHATGPT_OAUTH_CLIENT_ID}</code>. Click connect, approve the shown code in the opened OpenAI tab, then return here after approval completes.</p>
+          <p class="hint">Token exchange uses <code>${OPENAI_CHATGPT_DEVICE_CALLBACK_URL}</code> internally, avoiding Chrome extension redirect URI allowlisting.</p>
+          <p class="hint">${chatGptOAuthConfig?.access_token ? `OAuth connected${chatGptOAuthConfig.expires_at ? ` until ${chatGptOAuthConfig.expires_at}` : ""}.` : "OAuth is not connected yet."}</p>
+        </details>
       </section>
-      <label>Base URL <input name="base_url" value="${escapeAttribute(defaultBaseUrl(settings.provider, savedProviderConfig))}"></label>
-      <label>Model <input name="model" value="${escapeAttribute(savedProviderConfig?.model ?? "gpt-5.5")}"></label>
-      <label>API project key or compatible bearer token <input name="api_key" type="password" placeholder="Stored in chrome.storage.local only; leave blank to keep saved key"></label>
-      <section class="provider-note" aria-label="ChatGPT OAuth settings">
-        <strong>ChatGPT OAuth settings</strong>
-        <p>This provider uses OpenAI's device authorization flow with public client <code>${OPENAI_CHATGPT_OAUTH_CLIENT_ID}</code>. Click connect, approve the shown code in the opened OpenAI tab, then return here after the connection completes. No client ID, redirect URI, or endpoint setup is required.</p>
-        <p class="hint">Token exchange uses <code>${OPENAI_CHATGPT_DEVICE_CALLBACK_URL}</code> internally, avoiding Chrome extension redirect URI allowlisting.</p>
-        <p class="hint">${chatGptOAuthConfig?.access_token ? `OAuth connected${chatGptOAuthConfig.expires_at ? ` until ${chatGptOAuthConfig.expires_at}` : ""}.` : "OAuth is not connected yet."}</p>
-      </section>
-      <label>Excluded domains <input name="excludedDomains" value="${escapeAttribute(settings.excludedDomains.join(", "))}"></label>
-      <div class="actions">
-        <button name="action" value="save">Save</button>
-        <button name="action" value="connect-oauth">Save and connect ChatGPT OAuth</button>
-        <button name="action" value="disconnect-oauth">Disconnect ChatGPT OAuth</button>
-      </div>
+      <footer class="sticky-actions">
+        <div>
+          <strong>Save settings locally</strong>
+          <p>Provider credentials stay in <code>chrome.storage.local</code>.</p>
+        </div>
+        <div class="actions">
+          <button class="button primary" name="action" value="save">Save changes</button>
+          <button class="button secondary" name="action" value="connect-oauth">Save and connect OAuth</button>
+          <button class="button quiet" name="action" value="disconnect-oauth">Disconnect OAuth</button>
+        </div>
+      </footer>
     </form>`;
   document.querySelector<HTMLFormElement>("#settings-form")!.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -215,13 +256,16 @@ function hasLegacyOAuthMetadata(config: ProviderConfig): boolean {
 function showStatus(message: string, className: "saved" | "error"): void {
   clearStatus();
   const status = document.createElement("p");
-  status.className = className;
+  status.className = `status-banner ${className}`;
+  status.setAttribute("role", "status");
   status.textContent = message;
-  app.append(status);
+  document.querySelector("#status-region")?.append(status);
 }
 
 function clearStatus(): void {
-  document.querySelectorAll(".saved, .error").forEach((element) => element.remove());
+  document.querySelectorAll(".status-banner").forEach((element) => {
+    element.remove();
+  });
 }
 
 function escapeAttribute(value: string): string {
